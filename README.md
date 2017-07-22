@@ -1,8 +1,6 @@
 # NostreetsORM
 ###  Lightweight Object Relational Mapper using
-I used Entity Framework's Code First Concept and made a mapper that the creates tables and procdures of the given object. The object 
-will undergo normalization and multiple tables will be created if the object properties are custom data types. Uses the string given in
-the constructor to determine the key for the ConnectionString in WebConfig file. DefaultConnection is the key by default.
+I used Entity Framework's Code First Concept and made a mapper that creates the tables and standerd procdures of the given object. The object will undergo normalization and multiple tables will be created if the object properties are custom data types. Uses the string given in the constructor to determine the key for the ConnectionString in WebConfig file. DefaultConnection is the key by default.
 
 ### Example
 ```C#
