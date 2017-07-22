@@ -5,7 +5,7 @@ will undergo normalization and multiple tables will be created if the object pro
 the constructor to determine the key for the ConnectionString in WebConfig file. DefaultConnection is the key by default.
 
 ### Example
-```
+```C#
 
 DBService<CustomClass> srv = new DBService<CustomClass>("SomeKeyInWebConfig");
 
@@ -16,6 +16,5 @@ CustomClass list = srv.Get(9);
 srv.Insert(obj);
 
 srv.Update(obj);
-
 srv.Delete(7);
 ```
