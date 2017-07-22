@@ -10,11 +10,8 @@ the constructor to determine the key for the ConnectionString in WebConfig file.
 DBService<CustomClass> srv = new DBService<CustomClass>("SomeKeyInWebConfig");
 
 List<CustomClass> list = srv.GetAll();
-
 CustomClass list = srv.Get(9);
-
 srv.Insert(obj);
-
 srv.Update(obj);
 srv.Delete(7);
 ```
