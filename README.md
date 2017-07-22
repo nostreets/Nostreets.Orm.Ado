@@ -8,7 +8,7 @@ I used Entity Framework's Code First Concept and made a mapper that creates the 
 DBService<CustomClass> srv = new DBService<CustomClass>("SomeKeyInWebConfig");
 
 List<CustomClass> list = srv.GetAll();
-CustomClass list = srv.Get(9);
+CustomClass obj = srv.Get(9);
 srv.Insert(obj);
 srv.Update(obj);
 srv.Delete(7);
