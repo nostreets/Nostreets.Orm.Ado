@@ -53,7 +53,7 @@ namespace NostreetsORM.Utilities
             else
             {
                 var item = reader.GetValue(reader.GetSchemaTable().Columns[0].Ordinal);
-                if (item.GetType() == obj.GetType()) { obj = (T)item; }
+                if (item != null) { obj = (T)item; }
             }
 
             return obj;
