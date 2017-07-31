@@ -35,7 +35,7 @@ namespace NostreetsORM.Utilities
                     {
                         Type type = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
 
-                        if (type.Name != "String" && type.Name != "Char" && type.IsClass)
+                        if (type.Name != "String" && type.Name != "Char" && type.BaseType.Name != "Enum" && type.IsClass)
                         {
                             object property = JsonConvert.DeserializeObject(reader.GetString(reader.GetOrdinal(prop.Name)) ?? "", type);
                             if (property == null) { property = Activator.CreateInstance(type); }
@@ -46,6 +46,11 @@ namespace NostreetsORM.Utilities
                         {
                             if (reader[prop.Name].GetType() == typeof(decimal)) { prop.SetValue(obj, (reader.GetDouble(prop.Name)), null); }
                             else { prop.SetValue(obj, (reader.GetValue(reader.GetOrdinal(prop.Name)) ?? null), null); }
+                        }
+                    }
+                    else if (prop.PropertyType.BaseType.Name == "Enum") {
+                        if (reader[prop.Name + "Id"] != DBNull.Value) {
+                            prop.SetValue(obj, (reader.GetValue(reader.GetOrdinal(prop.Name + "Id")) ?? null), null);
                         }
                     }
                 }

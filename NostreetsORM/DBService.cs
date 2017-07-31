@@ -15,7 +15,7 @@ namespace NostreetsORM
         {
             try
             {
-                _path = Path.GetFullPath(Path.Combine(HttpContext.Current.Server.MapPath("~"), "../NostreetsORM/"));
+                _path = Path.GetFullPath(Path.Combine(HttpContext.Current.Server.MapPath("~"), "../Providers/"));
                 if (!CheckIfTableExist(typeof(T)))
                 {
                     CreateTables(typeof(T));
@@ -30,26 +30,14 @@ namespace NostreetsORM
 
         public DBService(string connectionKey) : base(connectionKey)
         {
-            _path = Path.GetFullPath(Path.Combine(HttpContext.Current.Server.MapPath("~"), "../NostreetsORM/"));
+            string basePath = HttpContext.Current.Server.MapPath("~");
+            if (connectionKey == "AzureDBConnection") {
+                basePath += "/wwwroot";
+            }
+            _path = Path.GetFullPath(Path.Combine(basePath, "../Providers/"));
+
             try
             {
-                if (!CheckIfTableExist(typeof(T)))
-                {
-                    CreateTables(typeof(T));
-                }
-            }
-            catch (Exception ex)
-            {
-
-                throw ex;
-            }
-        }
-
-        public DBService(string connectionKey, string directoryPath) : base(connectionKey)
-        {
-            try
-            {
-                _path = Path.GetFullPath(Path.Combine(directoryPath, "../NostreetsORM/"));
                 if (!CheckIfTableExist(typeof(T)))
                 {
                     CreateTables(typeof(T));
@@ -64,6 +52,8 @@ namespace NostreetsORM
 
         private Type _type = typeof(T);
         private string _path = null;
+
+        #region Private Methods
 
         private string DeterminSQLType(Type type, string parentTable)
         {
@@ -134,7 +124,7 @@ namespace NostreetsORM
             string sqlDeleteTemp = String.Join(" ", File.ReadAllLines(_path + "/Queries/DeleteProcdure.sql"));
             string sqlUpdateNullCheckTemp = String.Join(" ", File.ReadAllLines(_path + "/Queries/NullCheckForUpdate.sql")) + " ";
 
-            
+
             string[] temps = { sqlInsertTemp, sqlSelectTemp, sqlSelectTemp, sqlUpdateTemp, sqlDeleteTemp };
 
             for (int x = 0; x < temps.Length; x++)
@@ -189,7 +179,7 @@ namespace NostreetsORM
 
                             if (!props[i].PropertyType.Namespace.Contains("System") && props[i].PropertyType.BaseType.Name != "Enum")
                             {
-                                dels.Add("Delete " + props[i].Name + "s Where " + PK + " = (Select " + PK + " From " + type.Name + " Where " + PK + " = @" + PK + ")"); 
+                                dels.Add("Delete " + props[i].Name + "s Where " + PK + " = (Select " + PK + " From " + type.Name + " Where " + PK + " = @" + PK + ")");
                             }
                         }
 
@@ -401,7 +391,9 @@ namespace NostreetsORM
             }
 
             return result;
-        }
+        } 
+
+        #endregion
 
         public List<T> GetAll()
         {
@@ -441,9 +433,17 @@ namespace NostreetsORM
             DataProvider.ExecuteCmd(() => Connection, "dbo." + _type.Name + "s_Insert",
                        param => {
                            foreach (var prop in typeof(T).GetProperties()) {
+
                                if (prop.Name != "Id")
                                {
-                                   param.Add(new SqlParameter(prop.Name, prop.GetValue(model))); 
+                                   if (prop.PropertyType.BaseType.Name == "Enum") {
+                                       param.Add(new SqlParameter(prop.Name, (int)prop.GetValue(model)));
+
+                                   }
+                                   else
+                                   {
+                                       param.Add(new SqlParameter(prop.Name, prop.GetValue(model)));  
+                                   }
                                }
                            }
                        },
