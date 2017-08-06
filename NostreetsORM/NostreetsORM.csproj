@@ -60,15 +60,5 @@
   <ItemGroup>
     <None Include="packages.config" />
   </ItemGroup>
-  <ItemGroup>
-    <Content Include="Queries\CheckIfTableExist.sql" />
-    <Content Include="Queries\CreateColumn.sql" />
-    <Content Include="Queries\CreateTable.sql" />
-    <Content Include="Queries\DeleteProcdure.sql" />
-    <Content Include="Queries\InsertProcdure.sql" />
-    <Content Include="Queries\NullCheckForUpdate.sql" />
-    <Content Include="Queries\SelectProcdure.sql" />
-    <Content Include="Queries\UpdateProcdure.sql" />
-  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

@@ -15,7 +15,16 @@ namespace NostreetsORM
         {
             try
             {
-                _path = Path.GetFullPath(Path.Combine(HttpContext.Current.Server.MapPath("~"), "../Providers/"));
+                _partialProcs.Add("CheckIfTableExist", "Declare @IsTrue int = 0 IF EXISTS(SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = N'{0}s') Begin Set @IsTrue = 1 End Select @IsTrue");
+                _partialProcs.Add("InsertProcdure", "CREATE Proc [dbo].[{0}s_Insert] {1} As Begin Declare @NewId {2} Insert Into dbo.{3}s({4}) Values({5}) Set @NewId = SCOPE_IDENTITY() Select @NewId End");
+                _partialProcs.Add("UpdateProcdure", "CREATE Proc [dbo].[{0}s_Update] {1} As Begin {2} End");
+                _partialProcs.Add("DeleteProcdure", "CREATE Proc [dbo].[{0}s_Delete] @{1} {2} As Begin Delete {0} s Where {1} = @{1} {3} End");
+                _partialProcs.Add("SelectProcdure", "CREATE Proc [dbo].[{0}s_Select{5}] {3} AS Begin SELECT {1} FROM[dbo].[{0} s] {2} {4} End");
+                _partialProcs.Add("NullCheckForUpdate", "If @{2} Is Not Null Begin Update dbo.{0} s {1} End ");
+                _partialProcs.Add("CreateTable", "Declare @isTrue int = 0 Begin CREATE TABLE [dbo].[{0}s] ( {1} ); IF EXISTS(SELECT* FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = N'{0}s') Begin Set @IsTrue = 1 End End Select @IsTrue");
+                _partialProcs.Add("CreateColumn", "[{0}] {1} {2}");
+
+
                 if (!CheckIfTableExist(typeof(T)))
                 {
                     CreateTables(typeof(T));
@@ -30,11 +39,15 @@ namespace NostreetsORM
 
         public DBService(string connectionKey) : base(connectionKey)
         {
-            string basePath = HttpContext.Current.Server.MapPath("~");
-            if (connectionKey == "AzureDBConnection") {
-                basePath += "/wwwroot";
-            }
-            _path = Path.GetFullPath(Path.Combine(basePath, "../Providers/"));
+
+            _partialProcs.Add("CheckIfTableExist", "Declare @IsTrue int = 0 IF EXISTS(SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = N'{0}s') Begin Set @IsTrue = 1 End Select @IsTrue");
+            _partialProcs.Add("InsertProcdure", "CREATE Proc [dbo].[{0}s_Insert] {1} As Begin Declare @NewId {2} Insert Into dbo.{3}s({4}) Values({5}) Set @NewId = SCOPE_IDENTITY() Select @NewId End");
+            _partialProcs.Add("UpdateProcdure", "CREATE Proc [dbo].[{0}s_Update] {1} As Begin {2} End");
+            _partialProcs.Add("DeleteProcdure", "CREATE Proc [dbo].[{0}s_Delete] @{1} {2} As Begin Delete {0}s Where {1} = @{1} {3} End");
+            _partialProcs.Add("SelectProcdure", "CREATE Proc [dbo].[{0}s_Select{5}] {3} AS Begin SELECT {1} FROM [dbo].[{0}s] {2} {4} End");
+            _partialProcs.Add("NullCheckForUpdate", "If @{2} Is Not Null Begin Update dbo.{0}s {1} End ");
+            _partialProcs.Add("CreateTable", "Declare @isTrue int = 0 Begin CREATE TABLE [dbo].[{0}s] ( {1} ); IF EXISTS(SELECT* FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = N'{0}s') Begin Set @IsTrue = 1 End End Select @IsTrue");
+            _partialProcs.Add("CreateColumn", "[{0}] {1} {2}");
 
             try
             {
@@ -51,11 +64,12 @@ namespace NostreetsORM
         }
 
         private Type _type = typeof(T);
-        private string _path = null;
+        private Dictionary<string, string> _partialProcs = new Dictionary<string, string>();
+        //private string _path = null;
 
-        #region Private Methods
+        #region Private 
 
-        private string DeterminSQLType(Type type, string parentTable)
+        private string DeterminSQLType(Type type)
         {
             string statement = null;
             if ((type.BaseType.Name == "Enum" || type.IsClass) && (type.Name != "String" && type.Name != "Char"))
@@ -83,7 +97,7 @@ namespace NostreetsORM
                         break;
 
                     case "DateTime":
-                        statement = "DATETIME2 (7)  CONSTRAINT [DF_" + parentTable + "s_" + type.Name + "] DEFAULT (getutcdate())";
+                        statement = "DATETIME2 (7)  CONSTRAINT [DF_" + type.DeclaringType.Name + "s_" + type.Name + "] DEFAULT (getutcdate())";
                         break;
 
                     default:
@@ -97,7 +111,7 @@ namespace NostreetsORM
 
         private bool CheckIfTableExist(Type type)
         {
-            string sqlTemp = String.Join(" ", File.ReadAllLines(_path + "/Queries/CheckIfTableExist.sql"));
+            string sqlTemp = _partialProcs["CheckIfTableExist"]; //String.Join(" ", File.ReadAllLines(_path + "/Queries/CheckIfTableExist.sql"));
             string query = String.Format(sqlTemp, type.Name);
 
             int isTrue = 0;
@@ -118,11 +132,11 @@ namespace NostreetsORM
         private void CreateProcdures(Type type)
         {
 
-            string sqlInsertTemp = String.Join(" ", File.ReadAllLines(_path + "/Queries/InsertProcdure.sql"));
-            string sqlUpdateTemp = String.Join(" ", File.ReadAllLines(_path + "/Queries/UpdateProcdure.sql"));
-            string sqlSelectTemp = String.Join(" ", File.ReadAllLines(_path + "/Queries/SelectProcdure.sql"));
-            string sqlDeleteTemp = String.Join(" ", File.ReadAllLines(_path + "/Queries/DeleteProcdure.sql"));
-            string sqlUpdateNullCheckTemp = String.Join(" ", File.ReadAllLines(_path + "/Queries/NullCheckForUpdate.sql")) + " ";
+            string sqlInsertTemp = _partialProcs["InsertProcdure"]; //String.Join(" ", File.ReadAllLines(_path + "/Queries/InsertProcdure.sql"));
+            string sqlUpdateTemp = _partialProcs["UpdateProcdure"]; //String.Join(" ", File.ReadAllLines(_path + "/Queries/UpdateProcdure.sql"));
+            string sqlSelectTemp = _partialProcs["SelectProcdure"]; //String.Join(" ", File.ReadAllLines(_path + "/Queries/SelectProcdure.sql"));
+            string sqlDeleteTemp = _partialProcs["DeleteProcdure"]; //String.Join(" ", File.ReadAllLines(_path + "/Queries/DeleteProcdure.sql"));
+            string sqlUpdateNullCheckTemp = _partialProcs["NullCheckForUpdate"]; //String.Join(" ", File.ReadAllLines(_path + "/Queries/NullCheckForUpdate.sql")) + " ";
 
 
             string[] temps = { sqlInsertTemp, sqlSelectTemp, sqlSelectTemp, sqlUpdateTemp, sqlDeleteTemp };
@@ -161,14 +175,14 @@ namespace NostreetsORM
 
                         if (i > 0)
                         {
-                            inputs.Add("@" + props[i].Name + " " + DeterminSQLType(props[i].PropertyType, type.Name) + (i == props.Length - 1 ? "" : ","));
+                            inputs.Add("@" + props[i].Name + " " + DeterminSQLType(props[i].PropertyType/*, type.Name*/) + (i == props.Length - 1 ? "" : ","));
 
                             colm.Add(props[i].Name + ((props[i].PropertyType.BaseType.Name == "Enum" || props[i].PropertyType.IsClass) && (props[i].PropertyType.Name != "String" && props[i].PropertyType.Name != "Char") ? "Id" : "") + (i == props.Length - 1 ? "" : ","));
 
                             val.Add("@" + props[i].Name + (i == props.Length - 1 ? "" : ","));
                         }
 
-                        updtParams.Add("@" + props[i].Name + DeterminSQLType(props[i].PropertyType, type.Name) + (i == 0 ? "" : " = NULL") + (i == props.Length - 1 ? "" : ","));
+                        updtParams.Add("@" + props[i].Name + DeterminSQLType(props[i].PropertyType/*, type.Name*/) + (i == 0 ? "" : " = NULL") + (i == props.Length - 1 ? "" : ","));
 
                         innerUpdt.Add("SET " + props[i].Name + ((props[i].PropertyType.BaseType.Name == "Enum" || props[i].PropertyType.IsClass) && (props[i].PropertyType.Name != "String" && props[i].PropertyType.Name != "Char") ? "Id" : "") + " = @" + props[i].Name + " WHERE " + type.Name + "s." + props[0].Name + " = @" + props[0].Name);
 
@@ -196,7 +210,7 @@ namespace NostreetsORM
 
                     if (temps[x] == sqlInsertTemp)
                     {
-                        query = String.Format(temps[x], type.Name, inputParams, DeterminSQLType(props[0].PropertyType, type.Name), type.Name, columns, values);
+                        query = String.Format(temps[x], type.Name, inputParams, DeterminSQLType(props[0].PropertyType/*, type.Name*/), type.Name, columns, values);
                     }
                     else if (temps[x] == sqlSelectTemp)
                     {
@@ -206,7 +220,7 @@ namespace NostreetsORM
                         }
                         else
                         {
-                            query = String.Format(temps[x], type.Name, select, joins, "@" + props[0].Name + " " + DeterminSQLType(props[0].PropertyType, type.Name), "Where " + type.Name + "s." + props[0].Name + " = @" + props[0].Name, "ById");
+                            query = String.Format(temps[x], type.Name, select, joins, "@" + props[0].Name + " " + DeterminSQLType(props[0].PropertyType/*, type.Name*/), "Where " + type.Name + "s." + props[0].Name + " = @" + props[0].Name, "ById");
                         }
                     }
                     else if (temps[x] == sqlUpdateTemp)
@@ -223,7 +237,7 @@ namespace NostreetsORM
                     else if (temps[x] == sqlDeleteTemp)
                     {
 
-                        query = String.Format(temps[x], type.Name, props[0].Name, DeterminSQLType(props[0].PropertyType, type.Name), deletes);
+                        query = String.Format(temps[x], type.Name, props[0].Name, DeterminSQLType(props[0].PropertyType/*, type.Name*/), deletes);
                     }
 
 
@@ -231,8 +245,8 @@ namespace NostreetsORM
                 else if (type.BaseType.Name == "Enum")
                 {
 
-                    inputs.Add("@Value " + DeterminSQLType(typeof(string), type.Name));
-                    updtParams.Add("@Id " + DeterminSQLType(typeof(int), type.Name) + ", @Value " + DeterminSQLType(typeof(string), type.Name) + " = Null");
+                    inputs.Add("@Value " + DeterminSQLType(typeof(string)/*, type.Name*/));
+                    updtParams.Add("@Id " + DeterminSQLType(typeof(int)/*, type.Name*/) + ", @Value " + DeterminSQLType(typeof(string)/*, type.Name*/) + " = Null");
                     innerUpdt.Add("SET Value = @Value WHERE " + type.Name + "s.Id = @Id");
                     colm.Add("Value");
                     val.Add("@Value");
@@ -249,7 +263,7 @@ namespace NostreetsORM
 
                     if (temps[x] == sqlInsertTemp)
                     {
-                        query = String.Format(temps[x], type.Name, inputParams, DeterminSQLType(typeof(int), type.Name), type.Name, columns, values);
+                        query = String.Format(temps[x], type.Name, inputParams, DeterminSQLType(typeof(int)/*, type.Name*/), type.Name, columns, values);
                     }
                     else if (temps[x] == sqlSelectTemp)
                     {
@@ -259,7 +273,7 @@ namespace NostreetsORM
                         }
                         else
                         {
-                            query = String.Format(temps[x], type.Name, select, "", "@Id " + DeterminSQLType(typeof(int), type.Name), "Where " + type.Name + "s.Id = @Id", "ById");
+                            query = String.Format(temps[x], type.Name, select, "", "@Id " + DeterminSQLType(typeof(int)/*, type.Name*/), "Where " + type.Name + "s.Id = @Id", "ById");
                         }
                     }
                     else if (temps[x] == sqlUpdateTemp)
@@ -277,7 +291,7 @@ namespace NostreetsORM
                     else if (temps[x] == sqlDeleteTemp)
                     {
 
-                        query = String.Format(temps[x], type.Name, "Id", DeterminSQLType(typeof(int), type.Name), deletes);
+                        query = String.Format(temps[x], type.Name, "Id", DeterminSQLType(typeof(int)/*, type.Name*/), deletes);
                     }
                 }
 
@@ -330,9 +344,9 @@ namespace NostreetsORM
                         FK = "CONSTRAINT [FK_" + type.Name + "s_" + item.Name + "] FOREIGN KEY ([" + item.Name + "Id]) REFERENCES [dbo].[" + normalizedTbl["Name"] + "] ([" + normalizedTbl["PK"] + "])";
                     }
 
-                    columns.Add(String.Format(File.ReadAllText(_path + "/Queries/CreateColumn.sql"),
+                    columns.Add(String.Format(_partialProcs["CreateColumn"] /*File.ReadAllText(_path + "/Queries/CreateColumn.sql")*/,
                         (item.PropertyType.BaseType.Name == "Enum" || item.PropertyType.IsClass) && (item.PropertyType.Name != "String" && item.PropertyType.Name != "Char") ? item.Name + "Id" : item.Name,
-                        DeterminSQLType(item.PropertyType, type.Name),
+                        DeterminSQLType(item.PropertyType/*, type.Name*/),
                         props[0] == item ? "IDENTITY (1, 1) NOT NULL, " : props[props.Length - 1] == item ? endingTable + "," + String.Join(", ", FKs.ToArray()) : "NOT NULL, "));
                     if (FK != null)
                     {
@@ -345,14 +359,14 @@ namespace NostreetsORM
                 string endingTable = "NOT NULL, CONSTRAINT [PK_" + type.Name + "s] PRIMARY KEY CLUSTERED ([Id] ASC)";
                 for (int i = 0; i < 2; i++)
                 {
-                    columns.Add(String.Format(File.ReadAllText(_path + "/Queries/CreateColumn.sql"), i == 0 ? "Id" : "Value", DeterminSQLType(i == 0 ? typeof(int) : typeof(string), type.Name),
+                    columns.Add(String.Format(_partialProcs["CreateColumn"]/*File.ReadAllText(_path + "/Queries/CreateColumn.sql")*/, i == 0 ? "Id" : "Value", DeterminSQLType(i == 0 ? typeof(int) : typeof(string)/*, type.Name*/),
                     i == 0 ? "IDENTITY (1, 1) NOT NULL, " : endingTable));
                 }
             }
 
 
             string table = String.Concat(columns.ToArray());
-            string query = String.Format(String.Join(" ", File.ReadAllLines(_path + "/Queries/CreateTable.sql")), type.Name, table);
+            string query = String.Format(_partialProcs["CreateTable"]/*String.Join(" ", File.ReadAllLines(_path + "/Queries/CreateTable.sql"))*/, type.Name, table);
 
 
 
