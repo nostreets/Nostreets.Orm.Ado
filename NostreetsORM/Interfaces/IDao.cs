@@ -22,10 +22,12 @@ namespace NostreetsORM.Interfaces
 			 Action<IDataReader, short> map, 
 					   
 			Action<SqlParameterCollection> returnParameters = null, 
-			Action<SqlCommand> cmdModifier = null);
+			Action<SqlCommand> cmdModifier = null,
+            CommandBehavior cmdBehavior = default(CommandBehavior));
 
         int ExecuteNonQuery(Func<System.Data.SqlClient.SqlConnection> dataSouce, string storedProc, 
 			Action<System.Data.SqlClient.SqlParameterCollection> inputParamMapper, 
 			Action<System.Data.SqlClient.SqlParameterCollection> returnParameters = null);
+
 	}
 }

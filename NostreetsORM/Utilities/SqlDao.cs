@@ -40,7 +40,8 @@ namespace NostreetsORM.Utilities
             Action<SqlParameterCollection> inputParamMapper,
             Action<IDataReader, short> map,
             Action<SqlParameterCollection> returnParameters = null,
-            Action<SqlCommand> cmdModifier = null)
+            Action<SqlCommand> cmdModifier = null,
+            CommandBehavior cmdBehavior = default(CommandBehavior))
         {
             if (map == null)
                 throw new NullReferenceException("ObjectMapper is required.");
@@ -66,7 +67,8 @@ namespace NostreetsORM.Utilities
                             if (cmdModifier != null)
                                 cmdModifier(cmd);
 
-                            reader = cmd.ExecuteReader(CommandBehavior.CloseConnection);
+                            if (cmdBehavior == default(CommandBehavior)) { cmdBehavior = CommandBehavior.CloseConnection;  }
+                            reader = cmd.ExecuteReader(cmdBehavior);
 
                             while (true)
                             {
