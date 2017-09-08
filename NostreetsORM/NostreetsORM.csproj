@@ -55,6 +55,7 @@
     <Compile Include="Utilities\DataHelper.cs" />
     <Compile Include="Utilities\DataMapper.cs" />
     <Compile Include="Utilities\DataProvider.cs" />
+    <Compile Include="Utilities\Extensions.cs" />
     <Compile Include="Utilities\SqlDao.cs" />
   </ItemGroup>
   <ItemGroup>
