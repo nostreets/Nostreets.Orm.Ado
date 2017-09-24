@@ -53,7 +53,7 @@ namespace NostreetsORM.Utilities
             try
             {
 
-                using (conn = dataSouce())
+                using (conn = (SqlConnection)dataSouce())
                 {
                     if (conn != null)
                     {
@@ -126,7 +126,7 @@ namespace NostreetsORM.Utilities
             try
             {
 
-                using (conn = dataSouce())
+                using (conn = (SqlConnection)dataSouce())
                 {
                     if (conn != null)
                     {

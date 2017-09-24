@@ -14,6 +14,18 @@ namespace NostreetsORM.Interfaces
 
     }
 
+    public interface IDBService<T, IdType>
+    {
+
+        List<T> GetAll();
+        T Get(IdType id);
+        IdType Insert(T model);
+        void Delete(IdType id);
+        void Update(T model);
+
+
+    }
+
     public interface IDBService<T>
     {
 
@@ -21,7 +33,7 @@ namespace NostreetsORM.Interfaces
         T Get(object id);
         object Insert(T model);
         void Delete(object id);
-        void Update(object model);
+        void Update(T model);
 
 
     }
