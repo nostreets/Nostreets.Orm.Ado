@@ -67,7 +67,7 @@ namespace NostreetsORM
         private bool _procedureCreation = false;
         private Type _type = typeof(T);
         private Dictionary<string, string> _partialProcs = new Dictionary<string, string>();
-        
+
         #region Private 
 
         private void SetUp()
@@ -85,15 +85,16 @@ namespace NostreetsORM
 
 
             _partialProcs.Add("SelectStatement", " SELECT {0}");
-            _partialProcs.Add("FromStatement", " FROM[dbo].[{0}s] {1}");
-            _partialProcs.Add("InsertStatement", " INSERT INTO dbo.{0}s({1}) Values({2})");
+            _partialProcs.Add("FromStatement", " FROM[dbo].[{0}s]");
+            _partialProcs.Add("InsertStatement", " INSERT INTO dbo.{0}s({1})");
+            _partialProcs.Add("ValuestStatement", " Values({2})");
             _partialProcs.Add("CopyTableStatement", "SELECT {2} INTO {1}s FROM {0}s");
             _partialProcs.Add("IfStatement", " IF {0} BEGIN {1} END");
             _partialProcs.Add("ElseStatement", " ELSE BEGIN {0} END");
             _partialProcs.Add("ElseIfStatement", " ELSE IF BEGIN {0} END");
             _partialProcs.Add("DeclareStatement", " DECLARE {0} {1} = {2}");
             _partialProcs.Add("DeleteStatement", " DELETE {0}s");
-            _partialProcs.Add("DropProcdureStatement", " DROP PROCEDURE {0}");
+            _partialProcs.Add("DropProcedureStatement", " DROP PROCEDURE {0}");
             _partialProcs.Add("WhereStatement", " WHERE {0} BEGIN {1} END");
             _partialProcs.Add("CountStatement", " COUNT({0})");
             _partialProcs.Add("GroupByStatement", " GROUP BY {0}");
@@ -142,7 +143,7 @@ namespace NostreetsORM
 
         private List<string> GetAllColumns(Type type)
         {
-            string query = _partialProcs["GetAllColumns"];
+            string query = _partialProcs["GetAllColumns"].FormatString(type.Name);
             List<string> list = null;
 
             DataProvider.ExecuteCmd(() => Connection,
@@ -163,7 +164,7 @@ namespace NostreetsORM
 
         private List<string> GetAllProcs(Type type)
         {
-            string query = _partialProcs["DropProcdureStatement"];
+            string query = _partialProcs["GetAllProcs"];
             List<string> list = null;
 
             DataProvider.ExecuteCmd(() => Connection,
@@ -205,7 +206,7 @@ namespace NostreetsORM
 
             foreach (string proc in classProcs)
             {
-                string sqlTemp = _partialProcs["DropProcdureStatement"];
+                string sqlTemp = _partialProcs["DropProcedureStatement"];
                 string query = String.Format(sqlTemp, proc);
                 object result = null;
 
@@ -219,7 +220,7 @@ namespace NostreetsORM
                     null, mod => mod.CommandType = CommandType.Text);
             }
 
-            
+
         }
 
         private void DeleteTable(Type type)
@@ -272,7 +273,7 @@ namespace NostreetsORM
                 null,
                 (reader, set) =>
                 {
-                    columnNames  = reader.GetSchemaTable().Rows.Cast<DataRow>().Select(c => c["ColumnName"].ToString().ToLower()).ToList();
+                    columnNames = reader.GetSchemaTable().Rows.Cast<DataRow>().Select(c => c["ColumnName"].ToString().ToLower()).ToList();
                 },
                 null, mod => mod.CommandType = CommandType.Text);
 
@@ -313,7 +314,7 @@ namespace NostreetsORM
             string sqlInsertTemp = _partialProcs["InsertProcedure"],
                    sqlUpdateTemp = _partialProcs["UpdateProcedure"],
                    sqlSelectTemp = _partialProcs["SelectProcedure"],
-                   sqlDeleteTemp = _partialProcs["DeleteProcedure"], 
+                   sqlDeleteTemp = _partialProcs["DeleteProcedure"],
                    sqlUpdateNullCheckTemp = _partialProcs["NullCheckForUpdatePartial"];
 
 
@@ -600,9 +601,22 @@ namespace NostreetsORM
         private void UpdateData(Type type)
         {
             object result = null;
+            PropertyInfo[] props = type.GetProperties();
+            List<string> inputList = new List<string>();
+
+            for (int i = 0; i < props.Length; i++)
+            {
+                if (i > 0)
+                {
+                    inputList.Add("@" + props[i].Name + " " + DeterminSQLType(props[i].PropertyType) + (i == props.Length - 1 ? "" : ","));
+                }
+            }
+
+            string inputs = String.Join(" ", inputList.ToArray());
 
             List<string> oldColumns = GetAllColumns(type);
-            string query = _partialProcs["CopyTableStatement"].FormatString("temp" + type.Name, type.Name, "*");
+            string query = _partialProcs["InsertStatement"].FormatString(type.Name, inputs);
+            query += _partialProcs["SelectStatement"].FormatString("*") + _partialProcs["FromStatement"].FormatString("temp" + type.Name);
 
             DataProvider.ExecuteCmd(() => Connection,
                query,
@@ -749,7 +763,7 @@ namespace NostreetsORM
         private bool _procedureCreation = false;
         private Type _type = typeof(T);
         private Dictionary<string, string> _partialProcs = new Dictionary<string, string>();
-        
+
         #region Private 
 
         private void SetUp()
@@ -775,7 +789,7 @@ namespace NostreetsORM
             _partialProcs.Add("ElseIfStatement", " ELSE IF BEGIN {0} END");
             _partialProcs.Add("DeclareStatement", " DECLARE {0} {1} = {2}");
             _partialProcs.Add("DeleteStatement", " DELETE {0}s");
-            _partialProcs.Add("DropProcdureStatement", " DROP PROCEDURE {0}");
+            _partialProcs.Add("DropProcedureStatement", " DROP PROCEDURE {0}");
             _partialProcs.Add("WhereStatement", " WHERE {0} BEGIN {1} END");
             _partialProcs.Add("CountStatement", " COUNT({0})");
             _partialProcs.Add("GroupByStatement", " GROUP BY {0}");
@@ -824,7 +838,7 @@ namespace NostreetsORM
 
         private List<string> GetAllColumns(Type type)
         {
-            string query = _partialProcs["GetAllColumns"];
+            string query = _partialProcs["GetAllColumns"].FormatString(type.Name);
             List<string> list = null;
 
             DataProvider.ExecuteCmd(() => Connection,
@@ -845,7 +859,7 @@ namespace NostreetsORM
 
         private List<string> GetAllProcs(Type type)
         {
-            string query = _partialProcs["DropProcdureStatement"];
+            string query = _partialProcs["GetAllProcs"];
             List<string> list = null;
 
             DataProvider.ExecuteCmd(() => Connection,
@@ -887,7 +901,7 @@ namespace NostreetsORM
 
             foreach (string proc in classProcs)
             {
-                string sqlTemp = _partialProcs["DropProcdureStatement"];
+                string sqlTemp = _partialProcs["DropProcedureStatement"];
                 string query = String.Format(sqlTemp, proc);
                 object result = null;
 
@@ -901,7 +915,7 @@ namespace NostreetsORM
                     null, mod => mod.CommandType = CommandType.Text);
             }
 
-            
+
         }
 
         private void DeleteTable(Type type)
@@ -954,7 +968,7 @@ namespace NostreetsORM
                 null,
                 (reader, set) =>
                 {
-                    columnNames  = reader.GetSchemaTable().Rows.Cast<DataRow>().Select(c => c["ColumnName"].ToString().ToLower()).ToList();
+                    columnNames = reader.GetSchemaTable().Rows.Cast<DataRow>().Select(c => c["ColumnName"].ToString().ToLower()).ToList();
                 },
                 null, mod => mod.CommandType = CommandType.Text);
 
@@ -995,7 +1009,7 @@ namespace NostreetsORM
             string sqlInsertTemp = _partialProcs["InsertProcedure"],
                    sqlUpdateTemp = _partialProcs["UpdateProcedure"],
                    sqlSelectTemp = _partialProcs["SelectProcedure"],
-                   sqlDeleteTemp = _partialProcs["DeleteProcedure"], 
+                   sqlDeleteTemp = _partialProcs["DeleteProcedure"],
                    sqlUpdateNullCheckTemp = _partialProcs["NullCheckForUpdatePartial"];
 
 
