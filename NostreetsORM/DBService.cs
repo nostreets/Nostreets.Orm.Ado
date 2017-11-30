@@ -26,15 +26,9 @@ namespace NostreetsORM
                 {
                     CreateTable(_type);
                 }
-                else if (!CheckIfTableIsCurrent(_type))
+                else if (!CheckIfTypeIsCurrent(_type))
                 {
-                    CreateBackupTable(_type);
-                    DeleteTable(_type);
-
-                    CreateTable(_type);
-                    UpdateData(_type);
-
-                    DeleteBackupTable(_type);
+                    UpdateTable(_type);
                 }
             }
             catch (Exception ex)
@@ -47,13 +41,18 @@ namespace NostreetsORM
         public DBService(string connectionKey) : base(connectionKey)
         {
 
-            SetUp();
-
             try
             {
-                if (!CheckIfTableExist(typeof(T)))
+
+                SetUp();
+
+                if (!CheckIfTableExist(_type))
                 {
-                    CreateTable(typeof(T));
+                    CreateTable(_type);
+                }
+                else if (!CheckIfTypeIsCurrent(_type))
+                {
+                    UpdateTable(_type);
                 }
             }
             catch (Exception ex)
@@ -78,14 +77,14 @@ namespace NostreetsORM
             _partialProcs.Add("InsertProcedure", "CREATE Proc [dbo].[{0}s_Insert] {1} As Begin Declare @NewId {2} Insert Into dbo.{3}s({4}) Values({5}) Set @NewId = SCOPE_IDENTITY() Select @NewId End");
             _partialProcs.Add("UpdateProcedure", "CREATE Proc [dbo].[{0}s_Update] {1} As Begin {2} End");
             _partialProcs.Add("DeleteProcedure", "CREATE Proc [dbo].[{0}s_Delete] @{1} {2} As Begin Delete {0}s Where {1} = @{1} {3} End");
-            _partialProcs.Add("SelectProcedure", "CREATE Proc [dbo].[{0}s_Select{5}] {3} AS Begin SELECT {1} FROM[dbo].[{0}s] {2} {4} End");
+            _partialProcs.Add("SelectProcedure", "CREATE Proc [dbo].[{0}s_Select{5}] {3} AS Begin SELECT {1} FROM [dbo].[{0}s] {2} {4} End");
             _partialProcs.Add("NullCheckForUpdatePartial", "If @{2} Is Not Null Begin Update dbo.{0} s {1} End ");
             _partialProcs.Add("CreateTable", "Declare @isTrue int = 0 Begin CREATE TABLE [dbo].[{0}s] ( {1} ); IF EXISTS(SELECT* FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = N'{0}s') Begin Set @IsTrue = 1 End End Select @IsTrue");
             _partialProcs.Add("CreateColumn", "[{0}] {1} {2}");
 
 
             _partialProcs.Add("SelectStatement", " SELECT {0}");
-            _partialProcs.Add("FromStatement", " FROM[dbo].[{0}s]");
+            _partialProcs.Add("FromStatement", " FROM [dbo].[{0}s]");
             _partialProcs.Add("InsertStatement", " INSERT INTO dbo.{0}s({1})");
             _partialProcs.Add("ValuestStatement", " Values({2})");
             _partialProcs.Add("CopyTableStatement", "SELECT {2} INTO {1}s FROM {0}s");
@@ -99,6 +98,17 @@ namespace NostreetsORM
             _partialProcs.Add("CountStatement", " COUNT({0})");
             _partialProcs.Add("GroupByStatement", " GROUP BY {0}");
 
+        }
+
+        private void UpdateTable(Type type)
+        {
+            CreateBackupTable(type);
+            DeleteTable(type);
+
+            CreateTable(type);
+            UpdateRows(type);
+
+            DeleteBackupTable(type);
         }
 
         private string DeterminSQLType(Type type)
@@ -241,6 +251,28 @@ namespace NostreetsORM
             DeleteProcedures(_type);
         }
 
+        private bool CheckIfEnumIsCurrent(Type type)
+        {
+            bool result = false;
+            Dictionary<int, string> currentEnums = type.ToDictionary(),
+                                    dbEnums = null;
+
+            DataProvider.ExecuteCmd(() => Connection,
+                "SELECT * FROM {0}s".FormatString(type.Name), null,
+                (reader, set) => 
+                {
+                    if (dbEnums == null)
+                        dbEnums = new Dictionary<int, string>();
+
+                    dbEnums.Add(reader.GetSafeInt32(0), reader.GetSafeString(1));
+
+                }, null, cmd => cmd.CommandType = CommandType.Text);
+
+            if (currentEnums.Count == dbEnums.Count) { result = true; }
+
+            return result;
+        }
+
         private bool CheckIfTableExist(Type type)
         {
             string sqlTemp = _partialProcs["CheckIfTableExist"];
@@ -261,28 +293,30 @@ namespace NostreetsORM
             return false;
         }
 
-        private bool CheckIfTableIsCurrent(Type type)
+        private bool CheckIfTypeIsCurrent(Type type)
         {
             bool result = true;
-            string sqlTemp = _partialProcs["SelectStatement"];
-            string query = String.Format(sqlTemp, type.Name, "*", "");
+            List<PropertyInfo> baseProps = type.GetProperties().ToList();
+            List<string> columnsInTable = DataProvider.GetSchema(() => Connection, type.Name + 's');
+            Func<PropertyInfo, bool> predicate = (a) => 
+            {
+                bool _result = false;
+                _result = columnsInTable.Any(b => b == a.Name);
 
-            List<string> columnNames = null;
-            DataProvider.ExecuteCmd(() => Connection,
-               query,
-                null,
-                (reader, set) =>
-                {
-                    columnNames = reader.GetSchemaTable().Rows.Cast<DataRow>().Select(c => c["ColumnName"].ToString().ToLower()).ToList();
-                },
-                null, mod => mod.CommandType = CommandType.Text);
 
-            List<PropertyInfo> allProps = type.GetProperties().ToList();
-            List<PropertyInfo> excludedProps = allProps.GetPropertiesByAttribute<NotMappedAttribute>(type);
-            List<PropertyInfo> includedProps = allProps.Where(a => excludedProps.Any(b => b.Name != a.Name)).ToList();
+                if (a.PropertyType.BaseType == typeof(Enum))
+                    _result = CheckIfEnumIsCurrent(a.PropertyType);
 
-            if (columnNames.Where(a => includedProps.Any(b => b.Name != a)) != null ||
-                includedProps.Where(a => columnNames.Any(b => b != a.Name)) != null)
+
+                return _result;
+            };
+
+
+            List<PropertyInfo> excludedProps = baseProps.GetPropertiesByAttribute<NotMappedAttribute>(type);
+            List<PropertyInfo> includedProps = (excludedProps.Count > 0) ? baseProps.Where(a => excludedProps.Any(b => b.Name != a.Name)).ToList() : baseProps;
+            List<PropertyInfo> matchingProps = includedProps.Where(predicate).ToList();
+
+            if (matchingProps.Count != includedProps.Count)
             {
                 result = false;
             }
@@ -598,7 +632,7 @@ namespace NostreetsORM
             return result;
         }
 
-        private void UpdateData(Type type)
+        private void UpdateRows(Type type)
         {
             object result = null;
             PropertyInfo[] props = type.GetProperties();
@@ -722,15 +756,9 @@ namespace NostreetsORM
                 {
                     CreateTable(_type);
                 }
-                else if (!CheckIfTableIsCurrent(_type))
+                else if (!CheckIfTypeIsCurrent(_type))
                 {
-                    CreateBackupTable(_type);
-                    DeleteTable(_type);
-
-                    CreateTable(_type);
-                    UpdateData(_type);
-
-                    DeleteBackupTable(_type);
+                    UpdateTable(_type);
                 }
             }
             catch (Exception ex)
@@ -743,13 +771,18 @@ namespace NostreetsORM
         public DBService(string connectionKey) : base(connectionKey)
         {
 
-            SetUp();
-
             try
             {
-                if (!CheckIfTableExist(typeof(T)))
+
+                SetUp();
+
+                if (!CheckIfTableExist(_type))
                 {
-                    CreateTable(typeof(T));
+                    CreateTable(_type);
+                }
+                else if (!CheckIfTypeIsCurrent(_type))
+                {
+                    UpdateTable(_type);
                 }
             }
             catch (Exception ex)
@@ -764,7 +797,7 @@ namespace NostreetsORM
         private Type _type = typeof(T);
         private Dictionary<string, string> _partialProcs = new Dictionary<string, string>();
 
-        #region Private 
+         #region Private 
 
         private void SetUp()
         {
@@ -774,15 +807,16 @@ namespace NostreetsORM
             _partialProcs.Add("InsertProcedure", "CREATE Proc [dbo].[{0}s_Insert] {1} As Begin Declare @NewId {2} Insert Into dbo.{3}s({4}) Values({5}) Set @NewId = SCOPE_IDENTITY() Select @NewId End");
             _partialProcs.Add("UpdateProcedure", "CREATE Proc [dbo].[{0}s_Update] {1} As Begin {2} End");
             _partialProcs.Add("DeleteProcedure", "CREATE Proc [dbo].[{0}s_Delete] @{1} {2} As Begin Delete {0}s Where {1} = @{1} {3} End");
-            _partialProcs.Add("SelectProcedure", "CREATE Proc [dbo].[{0}s_Select{5}] {3} AS Begin SELECT {1} FROM[dbo].[{0}s] {2} {4} End");
+            _partialProcs.Add("SelectProcedure", "CREATE Proc [dbo].[{0}s_Select{5}] {3} AS Begin SELECT {1} FROM [dbo].[{0}s] {2} {4} End");
             _partialProcs.Add("NullCheckForUpdatePartial", "If @{2} Is Not Null Begin Update dbo.{0} s {1} End ");
             _partialProcs.Add("CreateTable", "Declare @isTrue int = 0 Begin CREATE TABLE [dbo].[{0}s] ( {1} ); IF EXISTS(SELECT* FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = N'{0}s') Begin Set @IsTrue = 1 End End Select @IsTrue");
             _partialProcs.Add("CreateColumn", "[{0}] {1} {2}");
 
 
             _partialProcs.Add("SelectStatement", " SELECT {0}");
-            _partialProcs.Add("FromStatement", " FROM[dbo].[{0}s] {1}");
-            _partialProcs.Add("InsertStatement", " INSERT INTO dbo.{0}s({1}) Values({2})");
+            _partialProcs.Add("FromStatement", " FROM [dbo].[{0}s]");
+            _partialProcs.Add("InsertStatement", " INSERT INTO dbo.{0}s({1})");
+            _partialProcs.Add("ValuestStatement", " Values({2})");
             _partialProcs.Add("CopyTableStatement", "SELECT {2} INTO {1}s FROM {0}s");
             _partialProcs.Add("IfStatement", " IF {0} BEGIN {1} END");
             _partialProcs.Add("ElseStatement", " ELSE BEGIN {0} END");
@@ -794,6 +828,17 @@ namespace NostreetsORM
             _partialProcs.Add("CountStatement", " COUNT({0})");
             _partialProcs.Add("GroupByStatement", " GROUP BY {0}");
 
+        }
+
+        private void UpdateTable(Type type)
+        {
+            CreateBackupTable(type);
+            DeleteTable(type);
+
+            CreateTable(type);
+            UpdateRows(type);
+
+            DeleteBackupTable(type);
         }
 
         private string DeterminSQLType(Type type)
@@ -936,6 +981,28 @@ namespace NostreetsORM
             DeleteProcedures(_type);
         }
 
+        private bool CheckIfEnumIsCurrent(Type type)
+        {
+            bool result = false;
+            Dictionary<int, string> currentEnums = type.ToDictionary(),
+                                    dbEnums = null;
+
+            DataProvider.ExecuteCmd(() => Connection,
+                "SELECT * FROM {0}s".FormatString(type.Name), null,
+                (reader, set) => 
+                {
+                    if (dbEnums == null)
+                        dbEnums = new Dictionary<int, string>();
+
+                    dbEnums.Add(reader.GetSafeInt32(0), reader.GetSafeString(1));
+
+                }, null, cmd => cmd.CommandType = CommandType.Text);
+
+            if (currentEnums.Count == dbEnums.Count) { result = true; }
+
+            return result;
+        }
+
         private bool CheckIfTableExist(Type type)
         {
             string sqlTemp = _partialProcs["CheckIfTableExist"];
@@ -956,28 +1023,30 @@ namespace NostreetsORM
             return false;
         }
 
-        private bool CheckIfTableIsCurrent(Type type)
+        private bool CheckIfTypeIsCurrent(Type type)
         {
             bool result = true;
-            string sqlTemp = _partialProcs["SelectStatement"];
-            string query = String.Format(sqlTemp, type.Name, "*", "");
+            List<PropertyInfo> baseProps = type.GetProperties().ToList();
+            List<string> columnsInTable = DataProvider.GetSchema(() => Connection, type.Name + 's');
+            Func<PropertyInfo, bool> predicate = (a) => 
+            {
+                bool _result = false;
+                _result = columnsInTable.Any(b => b == a.Name);
 
-            List<string> columnNames = null;
-            DataProvider.ExecuteCmd(() => Connection,
-               query,
-                null,
-                (reader, set) =>
-                {
-                    columnNames = reader.GetSchemaTable().Rows.Cast<DataRow>().Select(c => c["ColumnName"].ToString().ToLower()).ToList();
-                },
-                null, mod => mod.CommandType = CommandType.Text);
 
-            List<PropertyInfo> allProps = type.GetProperties().ToList();
-            List<PropertyInfo> excludedProps = allProps.GetPropertiesByAttribute<NotMappedAttribute>(type);
-            List<PropertyInfo> includedProps = allProps.Where(a => excludedProps.Any(b => b.Name != a.Name)).ToList();
+                if (a.PropertyType.BaseType == typeof(Enum))
+                    _result = CheckIfEnumIsCurrent(a.PropertyType);
 
-            if (columnNames.Where(a => includedProps.Any(b => b.Name != a)) != null ||
-                includedProps.Where(a => columnNames.Any(b => b != a.Name)) != null)
+
+                return _result;
+            };
+
+
+            List<PropertyInfo> excludedProps = baseProps.GetPropertiesByAttribute<NotMappedAttribute>(type);
+            List<PropertyInfo> includedProps = (excludedProps.Count > 0) ? baseProps.Where(a => excludedProps.Any(b => b.Name != a.Name)).ToList() : baseProps;
+            List<PropertyInfo> matchingProps = includedProps.Where(predicate).ToList();
+
+            if (matchingProps.Count != includedProps.Count)
             {
                 result = false;
             }
@@ -1293,12 +1362,25 @@ namespace NostreetsORM
             return result;
         }
 
-        private void UpdateData(Type type)
+        private void UpdateRows(Type type)
         {
             object result = null;
+            PropertyInfo[] props = type.GetProperties();
+            List<string> inputList = new List<string>();
+
+            for (int i = 0; i < props.Length; i++)
+            {
+                if (i > 0)
+                {
+                    inputList.Add("@" + props[i].Name + " " + DeterminSQLType(props[i].PropertyType) + (i == props.Length - 1 ? "" : ","));
+                }
+            }
+
+            string inputs = String.Join(" ", inputList.ToArray());
 
             List<string> oldColumns = GetAllColumns(type);
-            string query = _partialProcs["CopyTableStatement"].FormatString("temp" + type.Name, type.Name, "*");
+            string query = _partialProcs["InsertStatement"].FormatString(type.Name, inputs);
+            query += _partialProcs["SelectStatement"].FormatString("*") + _partialProcs["FromStatement"].FormatString("temp" + type.Name);
 
             DataProvider.ExecuteCmd(() => Connection,
                query,
