@@ -13,7 +13,7 @@ using NostreetsExtensions;
 
 namespace NostreetsORM
 {
-    public class DBService<T> : BaseService, IDBService<T>
+    public class DBService<T> : SqlService, IDBService<T>
     {
         public DBService() : base()
         {
@@ -43,14 +43,21 @@ namespace NostreetsORM
             try
             {
                 SetUp();
+                bool doesExist = CheckIfTableExist(_type),
+                     isCurrent = TablesAccessed.All(a => CheckIfTypeIsCurrent(a));
 
-                if (!CheckIfTableExist(_type))
+                if (!doesExist)
                 {
                     CreateTable(_type);
                 }
-                else if (!CheckIfTypeIsCurrent(_type))
+                else if (!isCurrent)
                 {
-                    UpdateTable(_type);
+                    Type[] typesToUpdate = TablesAccessed.Where(a => !CheckIfTypeIsCurrent(a)).ToArray();
+
+                    foreach (Type tbl in typesToUpdate)
+                    {
+                        UpdateTable(tbl);
+                    }
                 }
             }
             catch (Exception ex)
@@ -153,10 +160,15 @@ namespace NostreetsORM
             {
                 _type
             };
+
             PropertyInfo[] types = _type.GetProperties().Where(a => ShouldNormalize(a.PropertyType)).ToArray();
+
             foreach (PropertyInfo prop in types)
             {
-                result.Add(prop.PropertyType);
+                if (!result.Contains(prop.PropertyType))
+                {
+                    result.Add(prop.PropertyType); 
+                }
             }
             return result.ToArray();
         }
@@ -326,32 +338,42 @@ namespace NostreetsORM
         private bool CheckIfTypeIsCurrent(Type type)
         {
             bool result = true;
-            List<PropertyInfo> baseProps = type.GetProperties().ToList();
-            List<string> columnsInTable = DataProvider.GetSchema(() => Connection, type.Name + 's');
-            Func<PropertyInfo, bool> predicate = (a) =>
+
+            if (!type.IsEnum)
             {
-                bool _result = false;
-                _result = columnsInTable.Any(b => b == a.Name);
+                List<PropertyInfo> baseProps = type.GetProperties().ToList();
+                List<string> columnsInTable = DataProvider.GetSchema(() => Connection, type.Name + 's');
+                Func<PropertyInfo, bool> predicate = (a) =>
+                {
+                    bool _result = false;
+                    _result = columnsInTable.Any(b => b == a.Name);
 
 
-                if (a.PropertyType.BaseType == typeof(Enum))
-                    _result = CheckIfEnumIsCurrent(a.PropertyType);
+                    if (a.PropertyType.BaseType == typeof(Enum))
+                        _result = CheckIfEnumIsCurrent(a.PropertyType);
 
 
-                return _result;
-            };
+                    return _result;
+                };
 
 
-            List<PropertyInfo> excludedProps = baseProps.GetPropertiesByAttribute<NotMappedAttribute>(type);
-            List<PropertyInfo> includedProps = (excludedProps.Count > 0) ? baseProps.Where(a => excludedProps.Any(b => b.Name != a.Name)).ToList() : baseProps;
-            List<PropertyInfo> matchingProps = includedProps.Where(predicate).ToList();
+                List<PropertyInfo> excludedProps = baseProps.GetPropertiesByAttribute<NotMappedAttribute>(type);
+                List<PropertyInfo> includedProps = (excludedProps.Count > 0) ? baseProps.Where(a => excludedProps.Any(b => b.Name != a.Name)).ToList() : baseProps;
+                List<PropertyInfo> matchingProps = includedProps.Where(predicate).ToList();
 
-            if (matchingProps.Count != includedProps.Count)
+                if (matchingProps.Count != includedProps.Count)
+                {
+                    result = false;
+                }
+
+            }
+            else
             {
-                result = false;
+                result = CheckIfEnumIsCurrent(type);
             }
 
             return result;
+
         }
 
         private void CreateBackupTable(Type type)
@@ -780,7 +802,7 @@ namespace NostreetsORM
 
     }
 
-    public class DBService<T, IdType> : BaseService, IDBService<T, IdType>
+    public class DBService<T, IdType> : SqlService, IDBService<T, IdType>
     {
        public DBService() : base()
         {
