@@ -87,6 +87,7 @@ namespace NostreetsORM
             _partialProcs.Add("DeleteProcedure", "CREATE Proc [dbo].[{0}s_Delete] @{1} {2} As Begin Delete {0}s Where {1} = @{1} {3} End");
             _partialProcs.Add("SelectProcedure", "CREATE Proc [dbo].[{0}s_Select{5}] {3} AS Begin SELECT {1} FROM [dbo].[{0}s] {2} {4} End");
             _partialProcs.Add("NullCheckForUpdatePartial", "If @{2} Is Not Null Begin Update dbo.{0} s {1} End ");
+            _partialProcs.Add("CreateTableType", "CREATE TYPE [dbo].[{0}] AS TABLE( {1} )");
             _partialProcs.Add("CreateTable", "Declare @isTrue int = 0 Begin CREATE TABLE [dbo].[{0}s] ( {1} ); IF EXISTS(SELECT* FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = N'{0}s') Begin Set @IsTrue = 1 End End Select @IsTrue");
             _partialProcs.Add("CreateColumn", "[{0}] {1} {2}");
 
@@ -106,7 +107,7 @@ namespace NostreetsORM
             _partialProcs.Add("WhereStatement", " WHERE {0} BEGIN {1} END");
             _partialProcs.Add("CountStatement", " COUNT({0})");
             _partialProcs.Add("GroupByStatement", " GROUP BY {0}");
-
+            _partialProcs.Add("PrimaryKeyStatement", "PRIMARY KEY CLUSTERED ([{0}] ASC)");
         }
 
         private bool ShouldNormalize(Type type)
