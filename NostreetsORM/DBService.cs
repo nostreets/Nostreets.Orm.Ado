@@ -103,6 +103,7 @@ namespace NostreetsORM
             _partialProcs.Add("DeclareStatement", " DECLARE {0} {1} = {2}");
             _partialProcs.Add("DeleteRowsStatement", " DELETE {0}s");
             _partialProcs.Add("DropTableStatement", " DROP TABLE {0}s");
+            _partialProcs.Add("DropTableTypeStatement", " DROP TYPE [dbo].[{0}]");
             _partialProcs.Add("DropProcedureStatement", " DROP PROCEDURE {0}");
             _partialProcs.Add("WhereStatement", " WHERE {0} BEGIN {1} END");
             _partialProcs.Add("CountStatement", " COUNT({0})");
@@ -168,7 +169,7 @@ namespace NostreetsORM
             {
                 if (!result.Contains(prop.PropertyType))
                 {
-                    result.Add(prop.PropertyType); 
+                    result.Add(prop.PropertyType);
                 }
             }
             return result.ToArray();
@@ -176,18 +177,16 @@ namespace NostreetsORM
 
         private void UpdateTable(Type type)
         {
-            foreach (Type table in TablesAccessed)
-            {
-                CreateBackupTable(type);
 
-                DropTable(table);
+            CreateBackupTable(type);
 
-                CreateTable(type);
+            DropTable(type);
 
-                UpdateRows(type);
+            CreateTable(type);
 
-                DropBackupTable(type);
-            }
+            UpdateRows(type);
+
+            DropBackupTable(type);
         }
         #endregion
 
@@ -278,7 +277,7 @@ namespace NostreetsORM
         private void DropTable(Type type)
         {
             string sqlTemp = _partialProcs["DropTableStatement"];
-            string query = String.Format(sqlTemp, type.Name + 's');
+            string query = String.Format(sqlTemp, type.Name);
 
             object result = null;
 
@@ -291,7 +290,7 @@ namespace NostreetsORM
                 },
                 null, mod => mod.CommandType = CommandType.Text);
 
-            DropProcedures(_type);
+            DropProcedures(type);
         }
 
         private bool CheckIfEnumIsCurrent(Type type)
@@ -805,7 +804,7 @@ namespace NostreetsORM
 
     public class DBService<T, IdType> : SqlService, IDBService<T, IdType>
     {
-       public DBService() : base()
+        public DBService() : base()
         {
             try
             {
