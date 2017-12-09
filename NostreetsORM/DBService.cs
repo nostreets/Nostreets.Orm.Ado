@@ -10,6 +10,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 using NostreetsExtensions.Helpers;
 using NostreetsExtensions.Interfaces;
 using NostreetsExtensions;
+using System.Collections;
 
 namespace NostreetsORM
 {
@@ -50,6 +51,7 @@ namespace NostreetsORM
 
                 if (!doesExist)
                 {
+                    DeleteReferences();
                     CreateTable(_type);
                 }
                 else if (!isCurrent)
@@ -66,8 +68,27 @@ namespace NostreetsORM
 
         public Dictionary<Type, Type[]> SubTablesAccessed { get { return GetSubTablesAccessed(); } }
 
-        private bool _tableCreation = false;
-        private bool _procedureCreation = false;
+        private Dictionary<string, string> ProcTemplates
+        {
+            get
+            {
+                return new Dictionary<string, string>
+                {
+                    { "Insert",  _partialProcs["InsertProcedure"]},
+                    { "Update",  _partialProcs["UpdateProcedure"]},
+                    { "SelectAll",  _partialProcs["SelectProcedure"]},
+                    { "SelectBy",  _partialProcs["SelectProcedure"]},
+                    { "Delete",  _partialProcs["DeleteProcedure"]}
+
+                };
+            }
+        }
+
+        private int _tableLayer = 0,
+                    _procLayer = 0;
+        private bool _addedIdProp = false,
+                     _tableCreation = false,
+                     _procedureCreation = false;
         private Type _type = typeof(T);
         private Dictionary<string, string> _partialProcs = new Dictionary<string, string>();
 
@@ -112,13 +133,14 @@ namespace NostreetsORM
 
         private bool ShouldNormalize(Type type)
         {
-            return ((type.BaseType == typeof(Enum) || type.IsClass) && (type != typeof(String) && type != typeof(Char))) ? true : false;
+            return ((type != typeof(String) && type != typeof(Char)) && (type.BaseType == typeof(Enum) || type.IsCollection() || type.IsClass)) ? true : false;
         }
 
         private string DeterminSQLType(Type type)
         {
             string statement = null;
-            if ((type.BaseType.Name == nameof(Enum) || type.IsClass) && (type.Name != nameof(String) && type.Name != nameof(Char)))
+
+            if (ShouldNormalize(type))
             {
                 statement = "INT";
             }
@@ -240,9 +262,673 @@ namespace NostreetsORM
                 createAndUpdateFromBackUp(_type);
 
         }
+
+        private string GetCRUDProcsForEnum(Type type, KeyValuePair<string, string> template)
+        {
+            if (type.BaseType != typeof(Enum))
+                throw new Exception("type's BaseType has to be typeof(Enum)...");
+
+            string query = null;
+
+            string inputParams = null,
+                   columns = null,
+                   values = null,
+                   select = null,
+                   joins = null,
+                   deletes = null,
+                   updatesParams = null;
+
+            List<string> inputs = new List<string>(),
+                         colm = new List<string>(),
+                         val = new List<string>(),
+                         sel = new List<string>(),
+                         jns = new List<string>(),
+                         dels = new List<string>(),
+                         updtParams = new List<string>(),
+                         innerUpdt = new List<string>();
+
+
+            //inputs.Add("@Value " + DeterminSQLType(typeof(string)));
+            //updtParams.Add("@Id " + DeterminSQLType(typeof(int)) + ", @Value " + DeterminSQLType(typeof(string)) + " = Null");
+            //innerUpdt.Add("SET Value = @Value WHERE " + type.Name + "s.Id = @Id");
+            //colm.Add("Value");
+            //val.Add("@Value");
+            //sel.Add(type.Name + "s.[Id], " + type.Name + "s.[Value]");
+
+
+            inputParams = "@Value " + DeterminSQLType(typeof(string)); //String.Join(" ", inputs.ToArray());
+            columns = "Value"; //String.Join(" ", colm.ToArray());
+            values = "@Value"; // String.Join(" ", val.ToArray());
+            select = type.Name + "s.[Id], " + type.Name + "s.[Value]"; //String.Join(" ", sel.ToArray());
+            joins = String.Join(" ", jns.ToArray());
+            deletes = String.Join(" ", dels.ToArray());
+            updatesParams = "@Id " + DeterminSQLType(typeof(int)) + ", @Value " + DeterminSQLType(typeof(string)) + " = Null"; //String.Join(" ", updtParams.ToArray());
+
+
+            switch (template.Key)
+            {
+                case "Insert":
+                    query = String.Format(template.Value, type.Name, inputParams, DeterminSQLType(typeof(int)), type.Name, columns, values);
+                    break;
+
+                case "Update":
+                    string innerQuery = String.Format(_partialProcs["NullCheckForUpdatePartial"], type.Name, /*innerUpdt[num]*/"SET Value = @Value WHERE " + type.Name + "s.Id = @Id", "Value");
+                    query = String.Format(template.Value, type.Name, " @Id INT, " + inputParams, innerQuery);
+                    break;
+
+                case "SelectAll":
+                    query = String.Format(template.Value, type.Name, select, "", "", "", "All");
+                    break;
+
+                case "SelectBy":
+                    query = String.Format(template.Value, type.Name, select, "", "@Id " + DeterminSQLType(typeof(int)), "Where " + type.Name + "s.Id = @Id", "ById");
+                    break;
+
+                case "Delete":
+                    query = String.Format(template.Value, type.Name, "Id", DeterminSQLType(typeof(int)), deletes);
+                    break;
+            }
+
+            #region Legacy
+            //if (temps[interval] == sqlInsertTemp)
+            //{
+            //    query = String.Format(temps[interval], type.Name, inputParams, DeterminSQLType(typeof(int)/*, type.Name*/), type.Name, columns, values);
+            //}
+            //else if (temps[interval] == sqlSelectTemp)
+            //{
+            //    if (interval == 1)
+            //    {
+            //        query = String.Format(temps[interval], type.Name, select, "", "", "", "All");
+            //    }
+            //    else
+            //    {
+            //        query = String.Format(temps[interval], type.Name, select, "", "@Id " + DeterminSQLType(typeof(int)/*, type.Name*/), "Where " + type.Name + "s.Id = @Id", "ById");
+            //    }
+            //}
+            //else if (temps[interval] == sqlUpdateTemp)
+            //{
+
+            //    string innerQuery = null;
+            //    for (int num = 0; num < innerUpdt.Count; num++)
+            //    {
+
+            //        innerQuery += String.Format(sqlUpdateNullCheckTemp, type.Name, innerUpdt[num], "Value");
+            //    }
+
+            //    query = String.Format(temps[interval], type.Name, " @Id INT, " + inputParams, innerQuery);
+            //}
+            //else if (temps[interval] == sqlDeleteTemp)
+            //{
+
+            //    query = String.Format(temps[interval], type.Name, "Id", DeterminSQLType(typeof(int)/*, type.Name*/), deletes);
+            //} 
+            #endregion
+
+            return query;
+        }
+
+        private string GetCRUDProcsForClass(Type type, KeyValuePair<string, string> template)
+        {
+            if (type.IsClass && (type == typeof(String) || type == typeof(Char)))
+                throw new Exception("type's Type has to be a custom data type...");
+
+            string query = null;
+
+            string inputParams = null,
+                   columns = null,
+                   values = null,
+                   select = null,
+                   joins = null,
+                   deletes = null,
+                   updatesParams = null;
+
+            List<string> inputs = new List<string>(),
+                         colm = new List<string>(),
+                         val = new List<string>(),
+                         sel = new List<string>(),
+                         jns = new List<string>(),
+                         dels = new List<string>(),
+                         updtParams = new List<string>(),
+                         innerUpdt = new List<string>();
+
+            PropertyInfo[] props = type.GetProperties();
+
+            for (int i = 0; i < props.Length; i++)
+            {
+                string PK = (props[i].PropertyType.BaseType == typeof(Enum) ? "Id" : props[i].Name);
+
+                if (i > 0)
+                {
+                    inputs.Add("@" + props[i].Name + " " + DeterminSQLType(props[i].PropertyType) + (i == props.Length - 1 ? "" : ","));
+
+                    colm.Add(props[i].Name +
+                        (ShouldNormalize(props[i].PropertyType) ? "Id" : "") + (i == props.Length - 1 ? "" : ","));
+
+                    val.Add("@" + props[i].Name + (i == props.Length - 1 ? "" : ","));
+                }
+
+                updtParams.Add("@" + props[i].Name + DeterminSQLType(props[i].PropertyType) + (i == 0 ? "" : " = NULL") + (i == props.Length - 1 ? "" : ","));
+
+                innerUpdt.Add("SET " + props[i].Name +
+                    (ShouldNormalize(props[i].PropertyType) ? "Id" : "") + " = @" + props[i].Name + " WHERE " + type.Name + "s." + props[0].Name + " = @" + props[0].Name);
+
+
+                if (ShouldNormalize(props[i].PropertyType))
+                {
+                    jns.Add("Inner Join " + props[i].PropertyType.Name + "s AS " + props[i].Name + "Id On " + props[i].Name + "Id." + (props[i].PropertyType.BaseType == typeof(Enum) ? "Id" : props[i].Name + "Id") + " = " + type.Name + "s." + props[i].Name + "Id");
+
+                    if (props[i].PropertyType.BaseType != typeof(Enum))
+                    {
+                        dels.Add("Delete " + props[i].Name + "s Where " + PK + " = (Select " + PK + " From " + type.Name + " Where " + PK + " = @" + PK + ")");
+                    }
+                }
+
+                sel.Add(type.Name + "s.[" + props[i].Name +
+                    (ShouldNormalize(props[i].PropertyType) ? "Id" : "") + "]" + (i == props.Length - 1 ? " " : ","));
+            }
+
+            inputParams = String.Join(" ", inputs.ToArray());
+            columns = String.Join(" ", colm.ToArray());
+            values = String.Join(" ", val.ToArray());
+            select = String.Join(" ", sel.ToArray());
+            joins = String.Join(" ", jns.ToArray());
+            deletes = String.Join(" ", dels.ToArray());
+            updatesParams = String.Join(" ", updtParams.ToArray());
+
+            switch (template.Key)
+            {
+                case "Insert":
+                    query = String.Format(template.Value, type.Name, inputParams, DeterminSQLType(props[0].PropertyType), type.Name, columns, values);
+                    break;
+
+                case "Update":
+                    string innerQuery = null;
+                    for (int q = 1; q < innerUpdt.Count; q++)
+                    {
+                        innerQuery += String.Format(_partialProcs["NullCheckForUpdatePartial"], type.Name, innerUpdt[q], props[q].Name);
+                    }
+
+                    query = String.Format(template.Value, type.Name, "@Id INT, " + inputParams, innerQuery);
+                    break;
+
+                case "SelectAll":
+                    query = String.Format(template.Value, type.Name, select, joins, "", "", "All");
+                    break;
+
+                case "SelectBy":
+                    query = String.Format(template.Value, type.Name, select, joins, "@" + props[0].Name + " " + DeterminSQLType(props[0].PropertyType), "Where " + type.Name + "s." + props[0].Name + " = @" + props[0].Name, "ById");
+                    break;
+
+                case "Delete":
+                    query = String.Format(template.Value, type.Name, props[0].Name, DeterminSQLType(props[0].PropertyType), deletes);
+                    break;
+            }
+
+            #region Legacy
+            //if (temps[x] == sqlInsertTemp)
+            //{
+            //    query = String.Format(temps[x], type.Name, inputParams, DeterminSQLType(props[0].PropertyType), type.Name, columns, values);
+            //}
+            //else if (temps[x] == sqlSelectTemp)
+            //{
+            //    if (x == 1)
+            //    {
+            //        query = String.Format(temps[x], type.Name, select, joins, "", "", "All");
+            //    }
+            //    else
+            //    {
+            //        query = String.Format(temps[x], type.Name, select, joins, "@" + props[0].Name + " " + DeterminSQLType(props[0].PropertyType/*, type.Name*/), "Where " + type.Name + "s." + props[0].Name + " = @" + props[0].Name, "ById");
+            //    }
+            //}
+            //else if (temps[x] == sqlUpdateTemp)
+            //{
+
+            //    string innerQuery = null;
+            //    for (int q = 1; q < innerUpdt.Count; q++)
+            //    {
+            //        innerQuery += String.Format(sqlUpdateNullCheckTemp, type.Name, innerUpdt[q], props[q].Name);
+            //    }
+
+            //    query = String.Format(temps[x], type.Name, "@Id INT, " + inputParams, innerQuery);
+            //}
+            //else if (temps[x] == sqlDeleteTemp)
+            //{
+
+            //    query = String.Format(temps[x], type.Name, props[0].Name, DeterminSQLType(props[0].PropertyType/*, type.Name*/), deletes);
+            //}
+
+            #endregion
+
+            return query;
+        }
+
+        private string GetTableCreationQuery(Type type)
+        {
+            List<string> columns = new List<string>();
+
+            if (type.BaseType == typeof(Enum))
+            {
+                for (int i = 0; i < 2; i++)
+                {
+                    columns.Add(
+                        String.Format(
+                            _partialProcs["CreateColumn"],
+                            i == 0 ? "Id" : "Value",
+                            DeterminSQLType(i == 0 ? typeof(int) : typeof(string)),
+                            (i == 0)
+                                ? "IDENTITY (1, 1) NOT NULL, "
+                                : "NOT NULL, CONSTRAINT [PK_" + type.Name + "s] PRIMARY KEY CLUSTERED ([Id] ASC)")
+                     );
+                }
+            }
+            else if (type.IsClass && (type != typeof(String) || type != typeof(Char)))
+            {
+                List<string> FKs = new List<string>();
+                PropertyInfo[] props = type.GetProperties();
+
+                if (props[0].PropertyType != typeof(int))
+                {
+                    type = type.AddProperty(typeof(int), "Id");
+                    _addedIdProp = true;
+                }
+
+
+                foreach (PropertyInfo item in props)
+                {
+                    string FK = null;
+
+                    columns.Add(
+                        String.Format(
+                            _partialProcs["CreateColumn"],
+
+                            !ShouldNormalize(item.PropertyType)
+                                ? item.Name
+                                : !item.PropertyType.IsCollection()
+                                ? item.Name + "Id"
+                                : item.PropertyType.GetTypeOfT().Name + "CollectionId",
+
+                            DeterminSQLType(item.PropertyType),
+
+                            (props[0] == item && item.GetType() == typeof(int))
+                                ? "IDENTITY (1, 1) NOT NULL, "
+                                : props[props.Length - 1] == item
+                                ? "NOT NULL, CONSTRAINT [PK_" + type.Name + "s] PRIMARY KEY CLUSTERED ([" + props[0].Name + "] ASC)," + String.Join(", ", FKs.ToArray())
+                                : "NOT NULL, "
+                        )
+                    );
+
+
+                    if (ShouldNormalize(item.PropertyType))
+                    {
+                        string normalizedTblPK = null;
+
+                        if (item.PropertyType.IsCollection())
+                        {
+                            Type collectionType = item.PropertyType.GetTypeOfT();
+                            normalizedTblPK = CreateIntermaiateTable(item.PropertyType);
+
+                            FK = "CONSTRAINT [FK_" + type.Name + "s_" + collectionType.Name + "Collection] FOREIGN KEY ([" + item.Name + "CollectionId]) REFERENCES [dbo].[" + collectionType.Name + "Collection] ([" + normalizedTblPK/*normalizedTbl["PK"]*/ + "])";
+                        }
+                        else
+                        {
+                            normalizedTblPK = CreateTable(item.PropertyType);
+
+                            FK = "CONSTRAINT [FK_" + type.Name + "s_" + item.Name + "] FOREIGN KEY ([" + item.Name + "Id]) REFERENCES [dbo].[" + item.PropertyType.Name + 's' /*normalizedTbl["Name"]*/ + "] ([" + normalizedTblPK/*normalizedTbl["PK"]*/ + "])";
+
+                        }
+
+
+                        FKs.Add(FK);
+
+                    }
+                }
+            }
+
+
+
+            string table = String.Concat(columns.ToArray());
+            string query = String.Format(_partialProcs["CreateTable"], type.Name, table);
+
+            return query;
+        }
+
+        private void DeleteReferences()
+        {
+            foreach (Type tbl in SubTablesAccessed.Keys)
+            {
+                DropTable(tbl);
+                DropBackupTable(tbl);
+                DropProcedures(tbl);
+            }
+
+            DropTable(_type);
+            DropBackupTable(_type);
+            DropProcedures(_type);
+        }
+
         #endregion
 
-        #region Queries 
+
+        #region Queries To Write
+
+        private void AddEnumsAsRows(Type type)
+        {
+            if (type.BaseType != typeof(Enum))
+                throw new Exception("type's BaseType has to be a Enum...");
+
+            var fields = type.GetFields();
+            for (int i = 1; i < fields.Length; i++)
+            {
+                DataProvider.ExecuteNonQuery(() => Connection,
+                                "dbo." + type.Name + "s_Insert",
+                                (param) => param.Add(new SqlParameter("Value", fields[i].Name)),
+                                null);
+            }
+        }
+
+        private string CreateTable(Type type)
+        {
+            ++_tableLayer;
+            _tableCreation = true;
+            string result = null;
+
+            if (!CheckIfTableExist(type))
+            {
+                string query = GetTableCreationQuery(type);
+
+
+                int isTrue = 0;
+                DataProvider.ExecuteCmd(() => Connection,
+                   query,
+                    null,
+                    (reader, set) =>
+                    {
+                        isTrue = reader.GetSafeInt32(0);
+                    },
+                    null,
+                    mod => mod.CommandType = CommandType.Text);
+
+
+                if (isTrue == 1)
+                {
+                    CreateProcedures(type);
+                    //result = new Dictionary<string, string>();
+                    //result.Add("Name", type.Name + "s");
+
+                    if (type.IsClass && (type != typeof(String) || type != typeof(Char)))
+                    {
+                        //result.Add("PK", type.GetProperties()[0].Name);
+                        result = type.GetProperties()[0].Name;
+                    }
+                    else if (type.BaseType == typeof(Enum))
+                    {
+                        AddEnumsAsRows(type);
+                        result = "Id";
+                    }
+                }
+
+            }
+            else
+            {
+                //result = new Dictionary<string, string>();
+                // result.Add("Name", type.Name + "s");
+
+                if (type.IsClass && (type != typeof(String) || type != typeof(Char)))
+                {
+                    //result.Add("PK", type.GetProperties()[0].Name);
+                    result = type.GetProperties()[0].Name;
+
+                }
+                else if (type.BaseType == typeof(Enum))
+                {
+                    //result.Add("PK", "Id");
+                    result = "Id";
+                }
+
+
+
+            }
+
+            --_tableLayer;
+            _tableCreation = (_tableLayer == 0) ? false : true;
+
+            return result;
+        }
+
+        private void CreateBackupTable(Type type)
+        {
+            if (CheckIfTableExist(type))
+            {
+                string sqlTemp = _partialProcs["CopyTableStatement"];
+                string query = String.Format(sqlTemp, type.Name, "temp" + type.Name, "*");
+                object result = null;
+
+                DataProvider.ExecuteCmd(() => Connection,
+                   query,
+                    null,
+                    (reader, set) =>
+                    {
+                        result = DataMapper<object>.Instance.MapToObject(reader);
+                    },
+                    null, mod => mod.CommandType = CommandType.Text);
+            }
+
+        }
+
+        private void CreateProcedures(Type type)
+        {
+            ++_procLayer;
+            _procedureCreation = true;
+
+            //string sqlInsertTemp = _partialProcs["InsertProcedure"],
+            //       sqlUpdateTemp = _partialProcs["UpdateProcedure"],
+            //       sqlSelectTemp = _partialProcs["SelectProcedure"],
+            //       sqlDeleteTemp = _partialProcs["DeleteProcedure"],
+            //       sqlUpdateNullCheckTemp = _partialProcs["NullCheckForUpdatePartial"];
+
+
+            //string[] temps = { sqlInsertTemp, sqlSelectTemp, sqlSelectTemp, sqlUpdateTemp, sqlDeleteTemp };
+
+            foreach (KeyValuePair<string, string> template in ProcTemplates)
+            {
+
+                string query = null;
+
+                //string inputParams = null,
+                //       columns = null,
+                //       values = null,
+                //       select = null,
+                //       joins = null,
+                //       deletes = null,
+                //       updatesParams = null;
+
+                //List<string> inputs = new List<string>(),
+                //             colm = new List<string>(),
+                //             val = new List<string>(),
+                //             sel = new List<string>(),
+                //             jns = new List<string>(),
+                //             dels = new List<string>(),
+                //             updtParams = new List<string>(),
+                //             innerUpdt = new List<string>();
+
+                if (type.IsClass && (type != typeof(String) || type != typeof(Char)))
+                {
+                    query = GetCRUDProcsForClass(type, template);
+
+                }
+                else if (type.BaseType == typeof(Enum))
+                {
+                    query = GetCRUDProcsForEnum(type, template);
+                }
+
+
+                DataProvider.ExecuteCmd(() => Connection,
+                   query,
+                    null,
+                    (reader, set) =>
+                    {
+                        object id = DataMapper<object>.Instance.MapToObject(reader);
+                    },
+                    null, mod => mod.CommandType = System.Data.CommandType.Text);
+            }
+
+            --_procLayer;
+            _procedureCreation = (_procLayer == 0) ? false : true;
+
+        }
+
+        private string CreateIntermaiateTable(Type type)
+        {
+            if (!type.IsCollection())
+                throw new Exception("type has to implement IEnumerable...");
+
+            string result = null;
+
+            if (!CheckIfTableExist(type))
+            {
+                List<string> columns = new List<string>();
+                Type collectionType = type.GetTypeOfT();
+
+
+                string PK = CreateTable(collectionType);
+                string FK = "CONSTRAINT [FK_" + collectionType.Name + "List_" + collectionType.Name + "] FOREIGN KEY ([" + collectionType.Name + "Id]) REFERENCES [dbo].[" + collectionType.Name + "s] ([" + PK + "])";
+
+                for (int i = 0; i < 2; i++)
+                {
+                    columns.Add(
+                        String.Format(
+                            _partialProcs["CreateColumn"],
+                            i == 0 ? "Id" : collectionType.Name + "Id",
+                            DeterminSQLType(i == 0 ? typeof(int) : typeof(string)),
+                            (i == 0)
+                                ? "IDENTITY (1, 1) NOT NULL, "
+                                : "NOT NULL, CONSTRAINT [PK_" + type.Name + "s] PRIMARY KEY CLUSTERED ([Id] ASC)," + FK
+                        )
+                    );
+                }
+
+                string table = String.Concat(columns.ToArray());
+                string query = String.Format(_partialProcs["CreateTable"], collectionType.Name + "Collection", table);
+
+
+                DataProvider.ExecuteCmd(() => Connection,
+                      query,
+                       null,
+                       (reader, set) =>
+                       {
+                           object output = reader.GetValue(0);
+                       },
+                       null,
+                       mod => mod.CommandType = CommandType.Text);
+
+            }
+            else
+            {
+                result = "Id";
+            }
+
+            return result;
+
+        }
+
+        private void DropBackupTable(Type type)
+        {
+            if (CheckIfBackUpExist(type))
+            {
+                string sqlTemp = _partialProcs["DropTableStatement"];
+                string query = String.Format(sqlTemp, "temp" + type.Name);
+                object result = null;
+
+                DataProvider.ExecuteCmd(() => Connection,
+                   query,
+                    null,
+                    (reader, set) =>
+                    {
+                        result = DataMapper<object>.Instance.MapToObject(reader);
+                    },
+                    null, mod => mod.CommandType = CommandType.Text);
+            }
+        }
+
+        private void DropProcedures(Type type)
+        {
+            List<string> classProcs = GetAllProcs(type);
+
+            if (classProcs != null && classProcs.Count > 0)
+            {
+                foreach (string proc in classProcs)
+                {
+                    string sqlTemp = _partialProcs["DropProcedureStatement"];
+                    string query = String.Format(sqlTemp, proc);
+                    object result = null;
+
+                    DataProvider.ExecuteCmd(() => Connection,
+                       query,
+                        null,
+                        (reader, set) =>
+                        {
+                            result = DataMapper<object>.Instance.MapToObject(reader);
+                        },
+                        null, mod => mod.CommandType = CommandType.Text);
+                }
+            }
+
+
+        }
+
+        private void DropTable(Type type)
+        {
+            if (CheckIfTableExist(type))
+            {
+                string sqlTemp = _partialProcs["DropTableStatement"];
+                string query = String.Format(sqlTemp, type.Name);
+
+                object result = null;
+
+                DataProvider.ExecuteCmd(() => Connection,
+                   query,
+                    null,
+                    (reader, set) =>
+                    {
+                        result = DataMapper<object>.Instance.MapToObject(reader);
+                    },
+                    null, mod => mod.CommandType = CommandType.Text);
+
+                DropProcedures(type);
+            }
+        }
+
+        private void UpdateRows(Type type)
+        {
+            if (CheckIfTableExist(type) && CheckIfBackUpExist(type))
+            {
+                object result = null;
+                PropertyInfo[] props = type.GetProperties();
+                List<string> oldColumns = GetOldColumns(type);
+                List<string> matchingColumns = oldColumns.Where(a => props.Any(b => a == ((ShouldNormalize(b.PropertyType)) ? b.Name + "Id" : b.Name))).ToList();
+
+                string columns = String.Join(", ", matchingColumns);
+
+                string query = _partialProcs["IdentityInsertStatement"].FormatString(type.Name, "ON");
+                query += _partialProcs["InsertIntoStatement"].FormatString(type.Name, columns);
+                query += _partialProcs["SelectStatement"].FormatString(columns);
+                query += _partialProcs["FromStatement"].FormatString("temp" + type.Name);
+
+                DataProvider.ExecuteCmd(() => Connection,
+                   query,
+                    null,
+                    (reader, set) =>
+                    {
+                        result = DataMapper<object>.Instance.MapToObject(reader);
+                    },
+                    null, mod => mod.CommandType = CommandType.Text);
+            }
+
+        }
+
+        #endregion
+
+        #region Queries To Read
 
         private List<string> GetOldColumns(Type type)
         {
@@ -282,73 +968,9 @@ namespace NostreetsORM
                 null, mod => mod.CommandType = CommandType.Text);
 
 
-            List<string> result = list.Where(a => a.Contains(type.Name)).ToList();
+            List<string> result = list?.Where(a => a.Contains(type.Name)).ToList();
 
             return result;
-        }
-
-        private void DropBackupTable(Type type)
-        {
-            if (CheckIfBackUpExist(type))
-            {
-                string sqlTemp = _partialProcs["DropTableStatement"];
-                string query = String.Format(sqlTemp, "temp" + type.Name);
-                object result = null;
-
-                DataProvider.ExecuteCmd(() => Connection,
-                   query,
-                    null,
-                    (reader, set) =>
-                    {
-                        result = DataMapper<object>.Instance.MapToObject(reader);
-                    },
-                    null, mod => mod.CommandType = CommandType.Text); 
-            }
-        }
-
-        private void DropProcedures(Type type)
-        {
-            List<string> classProcs = GetAllProcs(type);
-
-            foreach (string proc in classProcs)
-            {
-                string sqlTemp = _partialProcs["DropProcedureStatement"];
-                string query = String.Format(sqlTemp, proc);
-                object result = null;
-
-                DataProvider.ExecuteCmd(() => Connection,
-                   query,
-                    null,
-                    (reader, set) =>
-                    {
-                        result = DataMapper<object>.Instance.MapToObject(reader);
-                    },
-                    null, mod => mod.CommandType = CommandType.Text);
-            }
-
-
-        }
-
-        private void DropTable(Type type)
-        {
-            if (CheckIfTableExist(type))
-            {
-                string sqlTemp = _partialProcs["DropTableStatement"];
-                string query = String.Format(sqlTemp, type.Name);
-
-                object result = null;
-
-                DataProvider.ExecuteCmd(() => Connection,
-                   query,
-                    null,
-                    (reader, set) =>
-                    {
-                        result = DataMapper<object>.Instance.MapToObject(reader);
-                    },
-                    null, mod => mod.CommandType = CommandType.Text);
-
-                DropProcedures(type); 
-            }
         }
 
         private bool CheckIfEnumIsCurrent(Type type)
@@ -376,7 +998,7 @@ namespace NostreetsORM
         private bool CheckIfTableExist(Type type)
         {
             string sqlTemp = _partialProcs["CheckIfTableExist"];
-            string query = String.Format(sqlTemp, type.Name);
+            string query = String.Format(sqlTemp, (type.IsCollection()) ? type.Name + "Collection" : type.Name);
 
             int isTrue = 0;
             DataProvider.ExecuteCmd(() => Connection,
@@ -425,7 +1047,7 @@ namespace NostreetsORM
                 Func<PropertyInfo, bool> predicate = (a) =>
                 {
                     bool _result = false;
-                    _result = columnsInTable.Any(b => b == ((ShouldNormalize(a.PropertyType)) ? a.Name + "Id" : a.Name));
+                    _result = columnsInTable.Any(b => b == (!(ShouldNormalize(a.PropertyType)) ? a.Name : a.PropertyType.IsCollection() ? a.PropertyType.GetTypeOfT().Name + "CollectionId" : a.Name + "Id"));
 
                     return _result;
                 };
@@ -447,363 +1069,6 @@ namespace NostreetsORM
             }
 
             return result;
-
-        }
-
-        private void CreateBackupTable(Type type)
-        {
-            if (CheckIfTableExist(type))
-            {
-                string sqlTemp = _partialProcs["CopyTableStatement"];
-                string query = String.Format(sqlTemp, type.Name, "temp" + type.Name, "*");
-                object result = null;
-
-                DataProvider.ExecuteCmd(() => Connection,
-                   query,
-                    null,
-                    (reader, set) =>
-                    {
-                        result = DataMapper<object>.Instance.MapToObject(reader);
-                    },
-                    null, mod => mod.CommandType = CommandType.Text); 
-            }
-
-        }
-
-        private void CreateProcedures(Type type)
-        {
-            _procedureCreation = true;
-
-            string sqlInsertTemp = _partialProcs["InsertProcedure"],
-                   sqlUpdateTemp = _partialProcs["UpdateProcedure"],
-                   sqlSelectTemp = _partialProcs["SelectProcedure"],
-                   sqlDeleteTemp = _partialProcs["DeleteProcedure"],
-                   sqlUpdateNullCheckTemp = _partialProcs["NullCheckForUpdatePartial"];
-
-
-            string[] temps = { sqlInsertTemp, sqlSelectTemp, sqlSelectTemp, sqlUpdateTemp, sqlDeleteTemp };
-
-            for (int x = 0; x < temps.Length; x++)
-            {
-
-                string query = null;
-
-                string inputParams = null,
-                       columns = null,
-                       values = null,
-                       select = null,
-                       joins = null,
-                       deletes = null,
-                       updatesParams = null;
-
-                List<string> inputs = new List<string>(),
-                             colm = new List<string>(),
-                             val = new List<string>(),
-                             sel = new List<string>(),
-                             jns = new List<string>(),
-                             dels = new List<string>(),
-                             updtParams = new List<string>(),
-                             innerUpdt = new List<string>();
-
-                if (type.IsClass && (type != typeof(String) || type != typeof(Char)))
-                {
-                    PropertyInfo[] props = type.GetProperties();
-
-                    for (int i = 0; i < props.Length; i++)
-                    {
-                        string PK = (props[i].PropertyType.BaseType == typeof(Enum) ? "Id" : props[i].Name);
-
-                        if (i > 0)
-                        {
-                            inputs.Add("@" + props[i].Name + " " + DeterminSQLType(props[i].PropertyType) + (i == props.Length - 1 ? "" : ","));
-
-                            colm.Add(props[i].Name +
-                                (ShouldNormalize(props[i].PropertyType) ? "Id" : "") + (i == props.Length - 1 ? "" : ","));
-
-                            val.Add("@" + props[i].Name + (i == props.Length - 1 ? "" : ","));
-                        }
-
-                        updtParams.Add("@" + props[i].Name + DeterminSQLType(props[i].PropertyType) + (i == 0 ? "" : " = NULL") + (i == props.Length - 1 ? "" : ","));
-
-                        innerUpdt.Add("SET " + props[i].Name +
-                            (ShouldNormalize(props[i].PropertyType) ? "Id" : "") + " = @" + props[i].Name + " WHERE " + type.Name + "s." + props[0].Name + " = @" + props[0].Name);
-
-
-                        if (ShouldNormalize(props[i].PropertyType))
-                        {
-                            jns.Add("Inner Join " + props[i].PropertyType.Name + "s AS " + props[i].Name + "Id On " + props[i].Name + "Id." + (props[i].PropertyType.BaseType == typeof(Enum) ? "Id" : props[i].Name + "Id") + " = " + type.Name + "s." + props[i].Name + "Id");
-
-                            if (!props[i].PropertyType.Namespace.Contains("System") && props[i].PropertyType.BaseType != typeof(Enum))
-                            {
-                                dels.Add("Delete " + props[i].Name + "s Where " + PK + " = (Select " + PK + " From " + type.Name + " Where " + PK + " = @" + PK + ")");
-                            }
-                        }
-
-                        sel.Add(type.Name + "s.[" + props[i].Name +
-                            (ShouldNormalize(props[i].PropertyType) ? "Id" : "") + "]" + (i == props.Length - 1 ? " " : ","));
-                    }
-
-                    inputParams = String.Join(" ", inputs.ToArray());
-                    columns = String.Join(" ", colm.ToArray());
-                    values = String.Join(" ", val.ToArray());
-                    select = String.Join(" ", sel.ToArray());
-                    joins = String.Join(" ", jns.ToArray());
-                    deletes = String.Join(" ", dels.ToArray());
-                    updatesParams = String.Join(" ", updtParams.ToArray());
-
-                    if (temps[x] == sqlInsertTemp)
-                    {
-                        query = String.Format(temps[x], type.Name, inputParams, DeterminSQLType(props[0].PropertyType), type.Name, columns, values);
-                    }
-                    else if (temps[x] == sqlSelectTemp)
-                    {
-                        if (x == 1)
-                        {
-                            query = String.Format(temps[x], type.Name, select, joins, "", "", "All");
-                        }
-                        else
-                        {
-                            query = String.Format(temps[x], type.Name, select, joins, "@" + props[0].Name + " " + DeterminSQLType(props[0].PropertyType/*, type.Name*/), "Where " + type.Name + "s." + props[0].Name + " = @" + props[0].Name, "ById");
-                        }
-                    }
-                    else if (temps[x] == sqlUpdateTemp)
-                    {
-
-                        string innerQuery = null;
-                        for (int q = 1; q < innerUpdt.Count; q++)
-                        {
-                            innerQuery += String.Format(sqlUpdateNullCheckTemp, type.Name, innerUpdt[q], props[q].Name);
-                        }
-
-                        query = String.Format(temps[x], type.Name, "@Id INT, " + inputParams, innerQuery);
-                    }
-                    else if (temps[x] == sqlDeleteTemp)
-                    {
-
-                        query = String.Format(temps[x], type.Name, props[0].Name, DeterminSQLType(props[0].PropertyType/*, type.Name*/), deletes);
-                    }
-
-
-                }
-                else if (type.BaseType == typeof(Enum))
-                {
-
-                    inputs.Add("@Value " + DeterminSQLType(typeof(string)));
-                    updtParams.Add("@Id " + DeterminSQLType(typeof(int)) + ", @Value " + DeterminSQLType(typeof(string)) + " = Null");
-                    innerUpdt.Add("SET Value = @Value WHERE " + type.Name + "s.Id = @Id");
-                    colm.Add("Value");
-                    val.Add("@Value");
-                    sel.Add(type.Name + "s.[Id], " + type.Name + "s.[Value]");
-
-
-                    inputParams = String.Join(" ", inputs.ToArray());
-                    columns = String.Join(" ", colm.ToArray());
-                    values = String.Join(" ", val.ToArray());
-                    select = String.Join(" ", sel.ToArray());
-                    joins = String.Join(" ", jns.ToArray());
-                    deletes = String.Join(" ", dels.ToArray());
-                    updatesParams = String.Join(" ", updtParams.ToArray());
-
-                    if (temps[x] == sqlInsertTemp)
-                    {
-                        query = String.Format(temps[x], type.Name, inputParams, DeterminSQLType(typeof(int)/*, type.Name*/), type.Name, columns, values);
-                    }
-                    else if (temps[x] == sqlSelectTemp)
-                    {
-                        if (x == 1)
-                        {
-                            query = String.Format(temps[x], type.Name, select, "", "", "", "All");
-                        }
-                        else
-                        {
-                            query = String.Format(temps[x], type.Name, select, "", "@Id " + DeterminSQLType(typeof(int)/*, type.Name*/), "Where " + type.Name + "s.Id = @Id", "ById");
-                        }
-                    }
-                    else if (temps[x] == sqlUpdateTemp)
-                    {
-
-                        string innerQuery = null;
-                        for (int num = 0; num < innerUpdt.Count; num++)
-                        {
-
-                            innerQuery += String.Format(sqlUpdateNullCheckTemp, type.Name, innerUpdt[num], "Value");
-                        }
-
-                        query = String.Format(temps[x], type.Name, " @Id INT, " + inputParams, innerQuery);
-                    }
-                    else if (temps[x] == sqlDeleteTemp)
-                    {
-
-                        query = String.Format(temps[x], type.Name, "Id", DeterminSQLType(typeof(int)/*, type.Name*/), deletes);
-                    }
-                }
-
-
-                DataProvider.ExecuteCmd(() => Connection,
-                   query,
-                    null,
-                    (reader, set) =>
-                    {
-                        object id = DataMapper<object>.Instance.MapToObject(reader);
-                    },
-                    null, mod => mod.CommandType = System.Data.CommandType.Text);
-            }
-
-            _procedureCreation = false;
-
-        }
-
-        private Dictionary<string, string> CreateTable(Type type)
-        {
-            _tableCreation = true;
-
-            PropertyInfo[] props = type.GetProperties();
-            Dictionary<string, string> result = null;
-            List<string> columns = new List<string>();
-            List<string> FKs = new List<string>();
-
-            if (CheckIfTableExist(type))
-            {
-                result = new Dictionary<string, string>();
-                result.Add("Name", type.Name + "s");
-
-                if (type.IsClass && (type != typeof(String) || type != typeof(Char)))
-                {
-                    result.Add("PK", type.GetProperties()[0].Name);
-                }
-                else if (type.BaseType == typeof(Enum))
-                {
-                    result.Add("PK", "Id");
-                }
-                return result;
-            }
-            else if (type.IsClass && (type != typeof(String) || type != typeof(Char)))
-            {
-                if (props[0].PropertyType != typeof(int))
-                {
-                    type = type.AddProperty(typeof(int), "Id");
-                }
-
-                foreach (PropertyInfo item in props)
-                {
-                    string FK = null;
-
-                    columns.Add(
-                        String.Format(
-                            _partialProcs["CreateColumn"],
-
-                            ShouldNormalize(item.PropertyType) 
-                                ? item.Name + "Id" 
-                                : item.Name,
-
-                            DeterminSQLType(item.PropertyType),
-
-                            (props[0] == item && item.GetType() == typeof(int)) 
-                                ? "IDENTITY (1, 1) NOT NULL, " 
-                                : props[props.Length - 1] == item 
-                                ? "NOT NULL, CONSTRAINT [PK_" + type.Name + "s] PRIMARY KEY CLUSTERED ([" + props[0].Name + "] ASC)," + String.Join(", ", FKs.ToArray()) 
-                                : "NOT NULL, "
-                        )
-                    );
-
-
-                    if (ShouldNormalize(item.PropertyType))
-                    {
-                        Dictionary<string, string> normalizedTbl = CreateTable(item.PropertyType);
-                        FK = "CONSTRAINT [FK_" + type.Name + "s_" + item.Name + "] FOREIGN KEY ([" + item.Name + "Id]) REFERENCES [dbo].[" + normalizedTbl["Name"] + "] ([" + normalizedTbl["PK"] + "])";
-                        FKs.Add(FK);
-                    }
-                }
-            }
-            else if (type.BaseType == typeof(Enum))
-            {
-                for (int i = 0; i < 2; i++)
-                {
-                    columns.Add(
-                        String.Format(
-                            _partialProcs["CreateColumn"],
-                            i == 0 ? "Id" : "Value",
-                            DeterminSQLType(i == 0 ? typeof(int) : typeof(string)),
-                            (i == 0) 
-                                ? "IDENTITY (1, 1) NOT NULL, " 
-                                : "NOT NULL, CONSTRAINT [PK_" + type.Name + "s] PRIMARY KEY CLUSTERED ([Id] ASC)")
-                     );
-                }
-            }
-
-
-            string table = String.Concat(columns.ToArray());
-            string query = String.Format(_partialProcs["CreateTable"], type.Name, table);
-
-
-
-            int isTrue = 0;
-            DataProvider.ExecuteCmd(() => Connection,
-               query,
-                null,
-                (reader, set) =>
-                {
-                    isTrue = reader.GetSafeInt32(0);
-                },
-                null,
-                mod => mod.CommandType = System.Data.CommandType.Text);
-
-
-            if (isTrue == 1)
-            {
-                CreateProcedures(type);
-                result = new Dictionary<string, string>();
-                result.Add("Name", type.Name + "s");
-
-                if (type.IsClass && (type != typeof(String) || type != typeof(Char)))
-                {
-                    result.Add("PK", type.GetProperties()[0].Name);
-                }
-                else if (type.BaseType == typeof(Enum))
-                {
-                    var fields = type.GetFields();
-                    result.Add("PK", "Id");
-
-                    for (int i = 1; i < fields.Length; i++)
-                    {
-                        DataProvider.ExecuteNonQuery(() => Connection,
-                                        "dbo." + type.Name + "s_Insert",
-                                        (param) => param.Add(new SqlParameter("Value", fields[i].Name)),
-                                        null);
-                    }
-                }
-            }
-
-
-            _tableCreation = false;
-            return result;
-        }
-
-        private void UpdateRows(Type type)
-        {
-            if (CheckIfTableExist(type) && CheckIfBackUpExist(type))
-            {
-                object result = null;
-                PropertyInfo[] props = type.GetProperties();
-                List<string> oldColumns = GetOldColumns(type);
-                List<string> matchingColumns = oldColumns.Where(a => props.Any(b => a == ((ShouldNormalize(b.PropertyType)) ? b.Name + "Id" : b.Name))).ToList();
-
-                string columns = String.Join(", ", matchingColumns);
-
-                string query = _partialProcs["IdentityInsertStatement"].FormatString(type.Name, "ON");
-                query += _partialProcs["InsertIntoStatement"].FormatString(type.Name, columns);
-                query += _partialProcs["SelectStatement"].FormatString(columns);
-                query += _partialProcs["FromStatement"].FormatString("temp" + type.Name);
-
-                DataProvider.ExecuteCmd(() => Connection,
-                   query,
-                    null,
-                    (reader, set) =>
-                    {
-                        result = DataMapper<object>.Instance.MapToObject(reader);
-                    },
-                    null, mod => mod.CommandType = CommandType.Text); 
-            }
 
         }
         #endregion
@@ -884,7 +1149,7 @@ namespace NostreetsORM
                            }
                        }
                        );
-        } 
+        }
         #endregion
 
     }
