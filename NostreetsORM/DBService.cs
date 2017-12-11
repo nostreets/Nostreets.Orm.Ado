@@ -86,8 +86,7 @@ namespace NostreetsORM
 
         private int _tableLayer = 0,
                     _procLayer = 0;
-        private bool _addedIdProp = false,
-                     _tableCreation = false,
+        private bool _tableCreation = false,
                      _procedureCreation = false;
         private Type _type = typeof(T);
         private Dictionary<string, string> _partialProcs = new Dictionary<string, string>();
@@ -134,6 +133,11 @@ namespace NostreetsORM
         private bool ShouldNormalize(Type type)
         {
             return ((type != typeof(String) && type != typeof(Char)) && (type.BaseType == typeof(Enum) || type.IsCollection() || type.IsClass)) ? true : false;
+        }
+
+        private bool NeedsIdProp(Type type)
+        {
+            return !type.IsClass ? false : type.GetProperties()[0].PropertyType != typeof(int) ? true : false;
         }
 
         private string DeterminSQLType(Type type)
@@ -372,6 +376,9 @@ namespace NostreetsORM
             if (type.IsClass && (type == typeof(String) || type == typeof(Char)))
                 throw new Exception("type's Type has to be a custom data type...");
 
+            if (NeedsIdProp(type))
+                type = type.AddProperty(typeof(int), "Id");
+
             string query = null;
 
             string inputParams = null,
@@ -523,14 +530,10 @@ namespace NostreetsORM
             }
             else if (type.IsClass && (type != typeof(String) || type != typeof(Char)))
             {
+
+
                 List<string> FKs = new List<string>();
                 PropertyInfo[] props = type.GetProperties();
-
-                if (props[0].PropertyType != typeof(int))
-                {
-                    type = type.AddProperty(typeof(int), "Id");
-                    _addedIdProp = true;
-                }
 
 
                 foreach (PropertyInfo item in props)
@@ -558,23 +561,28 @@ namespace NostreetsORM
                     );
 
 
-                    if (ShouldNormalize(item.PropertyType))
+                    if (ShouldNormalize(item.PropertyType) && (!item.PropertyType.IsSystemType() || item.PropertyType.IsCollection()))
                     {
                         string normalizedTblPK = null;
 
-                        if (item.PropertyType.IsCollection())
-                        {
-                            Type collectionType = item.PropertyType.GetTypeOfT();
-                            normalizedTblPK = CreateIntermaiateTable(item.PropertyType);
 
-                            FK = "CONSTRAINT [FK_" + type.Name + "s_" + collectionType.Name + "Collection] FOREIGN KEY ([" + item.Name + "CollectionId]) REFERENCES [dbo].[" + collectionType.Name + "Collection] ([" + normalizedTblPK/*normalizedTbl["PK"]*/ + "])";
-                        }
-                        else
+                        if (!item.PropertyType.IsCollection())
                         {
                             normalizedTblPK = CreateTable(item.PropertyType);
 
                             FK = "CONSTRAINT [FK_" + type.Name + "s_" + item.Name + "] FOREIGN KEY ([" + item.Name + "Id]) REFERENCES [dbo].[" + item.PropertyType.Name + 's' /*normalizedTbl["Name"]*/ + "] ([" + normalizedTblPK/*normalizedTbl["PK"]*/ + "])";
 
+                        }
+                        else
+                        {
+                            Type collectionType = item.PropertyType.GetTypeOfT();
+
+                            if (!collectionType.IsSystemType())
+                            {
+                                normalizedTblPK = CreateIntermaiateTable(item.PropertyType);
+
+                                FK = "CONSTRAINT [FK_" + type.Name + "s_" + collectionType.Name + "Collection] FOREIGN KEY ([" + item.Name + "CollectionId]) REFERENCES [dbo].[" + collectionType.Name + "Collection] ([" + normalizedTblPK/*normalizedTbl["PK"]*/ + "])"; 
+                            }
                         }
 
 
@@ -632,6 +640,10 @@ namespace NostreetsORM
             _tableCreation = true;
             string result = null;
 
+            if (NeedsIdProp(type))
+                type = type.AddProperty(typeof(int), "Id");
+
+
             if (!CheckIfTableExist(type))
             {
                 string query = GetTableCreationQuery(type);
@@ -652,12 +664,9 @@ namespace NostreetsORM
                 if (isTrue == 1)
                 {
                     CreateProcedures(type);
-                    //result = new Dictionary<string, string>();
-                    //result.Add("Name", type.Name + "s");
 
                     if (type.IsClass && (type != typeof(String) || type != typeof(Char)))
                     {
-                        //result.Add("PK", type.GetProperties()[0].Name);
                         result = type.GetProperties()[0].Name;
                     }
                     else if (type.BaseType == typeof(Enum))
@@ -670,18 +679,14 @@ namespace NostreetsORM
             }
             else
             {
-                //result = new Dictionary<string, string>();
-                // result.Add("Name", type.Name + "s");
 
                 if (type.IsClass && (type != typeof(String) || type != typeof(Char)))
                 {
-                    //result.Add("PK", type.GetProperties()[0].Name);
                     result = type.GetProperties()[0].Name;
 
                 }
                 else if (type.BaseType == typeof(Enum))
                 {
-                    //result.Add("PK", "Id");
                     result = "Id";
                 }
 
