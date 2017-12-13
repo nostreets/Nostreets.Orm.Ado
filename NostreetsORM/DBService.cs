@@ -74,7 +74,8 @@ namespace NostreetsORM
             {
                 return new Dictionary<string, string>
                 {
-                    { "Insert",  _partialProcs["InsertProcedure"]},
+                    { "Insert",  _partialProcs["InsertWithNewIDProcedure"]},
+                    { "InsertWithID",  _partialProcs["InsertWithIDProcedure"]},
                     { "Update",  _partialProcs["UpdateProcedure"]},
                     { "SelectAll",  _partialProcs["SelectProcedure"]},
                     { "SelectBy",  _partialProcs["SelectProcedure"]},
@@ -94,37 +95,41 @@ namespace NostreetsORM
 
         private void SetUp()
         {
-            _partialProcs.Add("GetAllColumns", "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '{0}s'");
+            _partialProcs.Add("InsertWithNewIDProcedure", "CREATE Proc [dbo].[{0}_Insert] {1} As Begin Declare @NewId {2} Insert Into [dbo].{0}({3}) Values({4}) Set @NewId = SCOPE_IDENTITY() Select @NewId End");
+            _partialProcs.Add("InsertWithIDProcedure", "CREATE Proc [dbo].[{0}_Insert] {1} As Begin Insert Into [dbo].{0}({2}) Values({3}) Select @{4} End");
+            _partialProcs.Add("UpdateProcedure", "CREATE Proc [dbo].[{0}_Update] {1} As Begin {2} End");
+            _partialProcs.Add("DeleteProcedure", "CREATE Proc [dbo].[{0}_Delete] @{1} {2} As Begin Delete {0} Where {1} = @{1} {3} End");
+            _partialProcs.Add("SelectProcedure", "CREATE Proc [dbo].[{0}_Select{5}] {3} AS Begin SELECT {1} FROM [dbo].[{0}] {2} {4} End");
+            _partialProcs.Add("NullCheckForUpdatePartial", "If @{2} Is Not Null Begin Update [dbo].{0} {1} End ");
+
+
+            _partialProcs.Add("GetPKOfTable", "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE OBJECTPROPERTY(OBJECT_ID(CONSTRAINT_SCHEMA + '.' + QUOTENAME(CONSTRAINT_NAME)), 'IsPrimaryKey') = 1 AND TABLE_NAME = '{0}'");
+            _partialProcs.Add("GetAllColumns", "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '{0}'");
             _partialProcs.Add("GetAllProcs", "SELECT NAME FROM [dbo].[sysobjects] WHERE(type = 'P')");
-            _partialProcs.Add("CheckIfTableExist", "Declare @IsTrue int = 0 IF EXISTS(SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = N'{0}s') Begin Set @IsTrue = 1 End Select @IsTrue");
-            _partialProcs.Add("InsertProcedure", "CREATE Proc [dbo].[{0}s_Insert] {1} As Begin Declare @NewId {2} Insert Into [dbo].{3}s({4}) Values({5}) Set @NewId = SCOPE_IDENTITY() Select @NewId End");
-            _partialProcs.Add("UpdateProcedure", "CREATE Proc [dbo].[{0}s_Update] {1} As Begin {2} End");
-            _partialProcs.Add("DeleteProcedure", "CREATE Proc [dbo].[{0}s_Delete] @{1} {2} As Begin Delete {0}s Where {1} = @{1} {3} End");
-            _partialProcs.Add("SelectProcedure", "CREATE Proc [dbo].[{0}s_Select{5}] {3} AS Begin SELECT {1} FROM [dbo].[{0}s] {2} {4} End");
-            _partialProcs.Add("NullCheckForUpdatePartial", "If @{2} Is Not Null Begin Update [dbo].{0}s {1} End ");
+            _partialProcs.Add("CheckIfTableExist", "Declare @IsTrue int = 0 IF EXISTS(SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = N'{0}') Begin Set @IsTrue = 1 End Select @IsTrue");
             _partialProcs.Add("CreateTableType", "CREATE TYPE [dbo].[{0}] AS TABLE( {1} )");
-            _partialProcs.Add("CreateTable", "Declare @isTrue int = 0 Begin CREATE TABLE [dbo].[{0}s] ( {1} ); IF EXISTS(SELECT* FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = N'{0}s') Begin Set @IsTrue = 1 End End Select @IsTrue");
+            _partialProcs.Add("CreateTable", "Declare @isTrue int = 0 Begin CREATE TABLE [dbo].[{0}] ( {1} ); IF EXISTS(SELECT* FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = N'{0}') Begin Set @IsTrue = 1 End End Select @IsTrue");
             _partialProcs.Add("CreateColumn", "[{0}] {1} {2}");
 
 
             _partialProcs.Add("SelectStatement", " SELECT {0}");
-            _partialProcs.Add("FromStatement", " FROM [dbo].[{0}s]");
-            _partialProcs.Add("InsertIntoStatement", " INSERT INTO [dbo].[{0}s]({1})");
+            _partialProcs.Add("FromStatement", " FROM [dbo].[{0}]");
+            _partialProcs.Add("InsertIntoStatement", " INSERT INTO [dbo].[{0}]({1})");
             _partialProcs.Add("ValuesStatement", " Values({2})");
-            _partialProcs.Add("CopyTableStatement", "SELECT {2} INTO {1}s FROM {0}s");
+            _partialProcs.Add("CopyTableStatement", "SELECT {2} INTO {1} FROM {0}");
             _partialProcs.Add("IfStatement", " IF {0} BEGIN {1} END");
             _partialProcs.Add("ElseStatement", " ELSE BEGIN {0} END");
             _partialProcs.Add("ElseIfStatement", " ELSE IF BEGIN {0} END");
             _partialProcs.Add("DeclareStatement", " DECLARE {0} {1} = {2}");
-            _partialProcs.Add("DeleteRowsStatement", " DELETE {0}s");
-            _partialProcs.Add("DropTableStatement", " DROP TABLE {0}s");
+            _partialProcs.Add("DeleteRowsStatement", " DELETE {0}");
+            _partialProcs.Add("DropTableStatement", " DROP TABLE {0}");
             _partialProcs.Add("DropTableTypeStatement", " DROP TYPE [dbo].[{0}]");
             _partialProcs.Add("DropProcedureStatement", " DROP PROCEDURE {0}");
             _partialProcs.Add("WhereStatement", " WHERE {0} BEGIN {1} END");
             _partialProcs.Add("CountStatement", " COUNT({0})");
             _partialProcs.Add("GroupByStatement", " GROUP BY {0}");
             _partialProcs.Add("PrimaryKeyStatement", "PRIMARY KEY CLUSTERED ([{0}] ASC)");
-            _partialProcs.Add("IdentityInsertStatement", " SET IDENTITY_INSERT [dbo].[{0}s] {1}");
+            _partialProcs.Add("IdentityInsertStatement", " SET IDENTITY_INSERT [dbo].[{0}] {1}");
 
         }
 
@@ -136,6 +141,17 @@ namespace NostreetsORM
         private bool NeedsIdProp(Type type)
         {
             return !type.IsClass ? false : type.GetProperties()[0].PropertyType != typeof(int) || !type.GetProperties()[0].Name.ToLower().Contains("id") ? true : false;
+        }
+
+        private string GetTableName(Type type)
+        {
+            return (!type.IsCollection()
+                        ? ((type.Name.IsPlural())
+                            ? type.Name + "es"
+                            : type.Name + "s")
+                        : (((type.GetTypeOfT().Name.IsPlural())
+                            ? type.GetTypeOfT().Name + "esCollections"
+                            : type.GetTypeOfT().Name) + "Collections"));
         }
 
         private string DeterminSQLType(Type type)
@@ -167,7 +183,7 @@ namespace NostreetsORM
                         break;
 
                     case nameof(DateTime):
-                        statement = "DATETIME2 (7)" + ((_tableCreation) ? "CONSTRAINT[DF_" + type.DeclaringType.Name + "s_" + type.Name + "] DEFAULT(getutcdate())" : "");
+                        statement = "DATETIME2 (7)" + ((_tableCreation) ? "CONSTRAINT[DF_" + GetTableName(type.DeclaringType) + "_" + type.Name + "] DEFAULT(getutcdate())" : "");
                         break;
 
                     default:
@@ -265,7 +281,42 @@ namespace NostreetsORM
 
         }
 
-        private string GetCRUDProcsForEnum(Type type, KeyValuePair<string, string> template)
+        private string GetProcsForCollection(Type type, KeyValuePair<string, string> template)
+        {
+            if (!type.IsCollection())
+                throw new Exception("type has to implement IEnumerable...");
+
+            Type collType = type.GetTypeOfT();
+            string query = null,
+                   inputParams = null,
+                   columns = null,
+                   values = null,
+                   select = null;
+
+            inputParams = "@Id {1}, @{0}Id {1}".FormatString(collType.Name, DeterminSQLType(typeof(int)));
+            columns = "[Id], [{0}Id] ".FormatString(collType.Name);
+            values = "@Id, @{0}Id ".FormatString(collType.Name);
+            select = "{0}.[Id], {0}.[{1}Id]".FormatString(GetTableName(type), collType.Name);
+
+            switch (template.Key)
+            {
+                case "InsertWithID":
+                    query = String.Format(template.Value, GetTableName(type), inputParams, columns, values, "Id");
+                    break;
+
+                case "SelectAll":
+                    query = String.Format(template.Value, GetTableName(type), select, "", "", "", "All");
+                    break;
+
+                case "SelectBy":
+                    query = String.Format(template.Value, GetTableName(type), select, "", "@Id " + DeterminSQLType(typeof(int)), "Where " + GetTableName(type) + ".Id = @Id", "ById");
+                    break;
+            }
+
+            return query;
+        }
+
+        private string GetProcsForEnum(Type type, KeyValuePair<string, string> template)
         {
             if (type.BaseType != typeof(Enum))
                 throw new Exception("type's BaseType has to be typeof(Enum)...");
@@ -283,40 +334,34 @@ namespace NostreetsORM
             inputParams = "@Value " + DeterminSQLType(typeof(string));
             columns = "Value";
             values = "@Value";
-            select = ((type.Name.IsPlural()) ? type.Name + "e" : type.Name) + "s.[Id], " + ((type.Name.IsPlural()) ? type.Name + "e" : type.Name) + "s.[Value]";
-            joins = ""; // FIX LATER
-            deletes = "";
+            select = GetTableName(type) + ".[Id], " + GetTableName(type) + ".[Value]";
             updatesParams = "@Id " + DeterminSQLType(typeof(int)) + ", @Value " + DeterminSQLType(typeof(string)) + " = Null";
 
 
             switch (template.Key)
             {
                 case "Insert":
-                    query = String.Format(template.Value, ((type.Name.IsPlural()) ? type.Name + "e" : type.Name), inputParams, DeterminSQLType(typeof(int)), ((type.Name.IsPlural()) ? type.Name + "e" : type.Name), columns, values);
+                    query = String.Format(template.Value, GetTableName(type), inputParams, DeterminSQLType(typeof(int)), columns, values);
                     break;
 
                 case "Update":
-                    string innerQuery = String.Format(_partialProcs["NullCheckForUpdatePartial"], ((type.Name.IsPlural()) ? type.Name + "e" : type.Name), /*innerUpdt[num]*/"SET Value = @Value WHERE " + ((type.Name.IsPlural()) ? type.Name + "e" : type.Name) + "s.Id = @Id", "Value");
-                    query = String.Format(template.Value, ((type.Name.IsPlural()) ? type.Name + "e" : type.Name), " @Id INT, " + inputParams, innerQuery);
+                    string innerQuery = String.Format(_partialProcs["NullCheckForUpdatePartial"], GetTableName(type), "SET Value = @Value WHERE " + GetTableName(type) + ".Id = @Id", "Value");
+                    query = String.Format(template.Value, GetTableName(type), " @Id INT, " + inputParams, innerQuery);
                     break;
 
                 case "SelectAll":
-                    query = String.Format(template.Value, ((type.Name.IsPlural()) ? type.Name + "e" : type.Name), select, "", "", "", "All");
+                    query = String.Format(template.Value, GetTableName(type), select, "", "", "", "All");
                     break;
 
                 case "SelectBy":
-                    query = String.Format(template.Value, ((type.Name.IsPlural()) ? type.Name + "e" : type.Name), select, "", "@Id " + DeterminSQLType(typeof(int)), "Where " + ((type.Name.IsPlural()) ? type.Name + "e" : type.Name) + "s.Id = @Id", "ById");
-                    break;
-
-                case "Delete":
-                    query = String.Format(template.Value, ((type.Name.IsPlural()) ? type.Name + "e" : type.Name), "Id", DeterminSQLType(typeof(int)), deletes);
+                    query = String.Format(template.Value, GetTableName(type), select, "", "@Id " + DeterminSQLType(typeof(int)), "Where " + GetTableName(type) + ".Id = @Id", "ById");
                     break;
             }
 
             return query;
         }
 
-        private string GetCRUDProcsForClass(Type type, KeyValuePair<string, string> template)
+        private string GetProcsForClass(Type type, KeyValuePair<string, string> template)
         {
             if (type.IsClass && (type == typeof(String) || type == typeof(Char)))
                 throw new Exception("type's Type has to be a custom data type...");
@@ -362,20 +407,20 @@ namespace NostreetsORM
                 updtParams.Add("@" + props[i].Name + DeterminSQLType(props[i].PropertyType) + (i == 0 ? "" : " = NULL") + (i == props.Length - 1 ? "" : ","));
 
                 innerUpdt.Add("SET [" + props[i].Name +
-                    (ShouldNormalize(props[i].PropertyType) ? "Id" : "") + "] = @" + props[i].Name + " WHERE " + ((type.Name.IsPlural()) ? type.Name + "e" : type.Name) + "s." + props[0].Name + " = @" + props[0].Name);
+                    (ShouldNormalize(props[i].PropertyType) ? "Id" : "") + "] = @" + props[i].Name + " WHERE " + GetTableName(type) + "." + props[0].Name + " = @" + props[0].Name);
 
 
                 if (ShouldNormalize(props[i].PropertyType))
                 {
-                    jns.Add("Inner Join " + props[i].PropertyType.Name + "s AS " + props[i].Name + "Id On " + props[i].Name + "Id." + (props[i].PropertyType.BaseType == typeof(Enum) ? "Id" : props[i].Name + "Id") + " = " + ((type.Name.IsPlural()) ? type.Name + "e" : type.Name) + "s." + props[i].Name + "Id");
+                    jns.Add("Inner Join " + props[i].PropertyType.Name + " AS " + props[i].Name + "Id On " + props[i].Name + "Id." + (props[i].PropertyType.BaseType == typeof(Enum) ? "Id" : props[i].Name + "Id") + " = " + GetTableName(type) + "." + props[i].Name + "Id");
 
                     if (props[i].PropertyType.BaseType != typeof(Enum))
                     {
-                        dels.Add("Delete " + props[i].Name + "s Where " + PK + " = (Select " + PK + " From " + ((type.Name.IsPlural()) ? type.Name + "e" : type.Name) + " Where " + PK + " = @" + PK + ")");
+                        dels.Add("Delete " + props[i].Name + " Where " + PK + " = (Select " + PK + " From " + GetTableName(type) + " Where " + PK + " = @" + PK + ")");
                     }
                 }
 
-                sel.Add(((type.Name.IsPlural()) ? type.Name + "e" : type.Name) + "s.[" + props[i].Name +
+                sel.Add(GetTableName(type) + ".[" + props[i].Name +
                     (ShouldNormalize(props[i].PropertyType) ? "Id" : "") + "]" + (i == props.Length - 1 ? " " : ","));
             }
 
@@ -390,36 +435,36 @@ namespace NostreetsORM
             switch (template.Key)
             {
                 case "Insert":
-                    query = String.Format(template.Value, ((type.Name.IsPlural()) ? type.Name + "e" : type.Name), inputParams, DeterminSQLType(props[0].PropertyType), ((type.Name.IsPlural()) ? type.Name + "e" : type.Name), columns, values);
+                    query = String.Format(template.Value, GetTableName(type), inputParams, DeterminSQLType(props[0].PropertyType), columns, values);
                     break;
 
                 case "Update":
                     string innerQuery = null;
                     for (int q = 1; q < innerUpdt.Count; q++)
                     {
-                        innerQuery += String.Format(_partialProcs["NullCheckForUpdatePartial"], ((type.Name.IsPlural()) ? type.Name + "e" : type.Name), innerUpdt[q], props[q].Name);
+                        innerQuery += String.Format(_partialProcs["NullCheckForUpdatePartial"], GetTableName(type), innerUpdt[q], props[q].Name);
                     }
 
-                    query = String.Format(template.Value, ((type.Name.IsPlural()) ? type.Name + "e" : type.Name), "@Id INT, " + inputParams, innerQuery);
+                    query = String.Format(template.Value, GetTableName(type), "@Id INT, " + inputParams, innerQuery);
                     break;
 
                 case "SelectAll":
-                    query = String.Format(template.Value, ((type.Name.IsPlural()) ? type.Name + "e" : type.Name), select, joins, "", "", "All");
+                    query = String.Format(template.Value, GetTableName(type), select, joins, "", "", "All");
                     break;
 
                 case "SelectBy":
-                    query = String.Format(template.Value, ((type.Name.IsPlural()) ? type.Name + "e" : type.Name), select, joins, "@" + props[0].Name + " " + DeterminSQLType(props[0].PropertyType), "Where " + ((type.Name.IsPlural()) ? type.Name + "e" : type.Name) + "s." + props[0].Name + " = @" + props[0].Name, "ById");
+                    query = String.Format(template.Value, GetTableName(type), select, joins, '@' + props[0].Name + " " + DeterminSQLType(props[0].PropertyType), "Where " + GetTableName(type) + '.' + props[0].Name + " = @" + props[0].Name, "ById");
                     break;
 
                 case "Delete":
-                    query = String.Format(template.Value, ((type.Name.IsPlural()) ? type.Name + "e" : type.Name), props[0].Name, DeterminSQLType(props[0].PropertyType), deletes);
+                    query = String.Format(template.Value, GetTableName(type), props[0].Name, DeterminSQLType(props[0].PropertyType), deletes);
                     break;
             }
 
             return query;
         }
 
-        private string GetTableCreationQuery(Type type)
+        private string GetCreateTableQuery(Type type)
         {
             List<string> columns = new List<string>();
 
@@ -434,7 +479,7 @@ namespace NostreetsORM
                             DeterminSQLType(i == 0 ? typeof(int) : typeof(string)),
                             (i == 0)
                                 ? "IDENTITY (1, 1) NOT NULL, "
-                                : "NOT NULL, CONSTRAINT [PK_" + ((type.Name.IsPlural()) ? type.Name + "e" : type.Name) + "s] PRIMARY KEY CLUSTERED ([Id] ASC)")
+                                : "NOT NULL, CONSTRAINT [PK_" + GetTableName(type) + "] PRIMARY KEY CLUSTERED ([Id] ASC)")
                      );
                 }
             }
@@ -450,27 +495,6 @@ namespace NostreetsORM
                 {
                     string FK = null;
 
-                    columns.Add(
-                        String.Format(
-                            _partialProcs["CreateColumn"],
-
-                            !ShouldNormalize(item.PropertyType)
-                                ? item.Name
-                                : !item.PropertyType.IsCollection()
-                                ? item.Name + "Id"
-                                : item.PropertyType.GetTypeOfT().Name + "CollectionId",
-
-                            DeterminSQLType(item.PropertyType),
-
-                            (item.GetType() == typeof(int))
-                                ? "IDENTITY (1, 1) NOT NULL, "
-                                : props[props.Length - 1] == item
-                                ? "NOT NULL, CONSTRAINT [PK_" + ((type.Name.IsPlural()) ? type.Name + "e" : type.Name) + "s] PRIMARY KEY CLUSTERED ([" + props[0].Name + "] ASC)," + String.Join(", ", FKs.ToArray())
-                                : "NOT NULL, "
-                        )
-                    );
-
-
                     if (ShouldNormalize(item.PropertyType) && (!item.PropertyType.IsSystemType() || item.PropertyType.IsCollection()))
                     {
                         string normalizedTblPK = null;
@@ -480,32 +504,87 @@ namespace NostreetsORM
                         {
                             normalizedTblPK = CreateTable(item.PropertyType);
 
-                            FK = "CONSTRAINT [FK_" + ((type.Name.IsPlural()) ? type.Name + "e" : type.Name) + "s_" + item.Name + "] FOREIGN KEY ([" + item.Name + "Id]) REFERENCES [dbo].[" + item.PropertyType.Name + 's' /*normalizedTbl["Name"]*/ + "] ([" + normalizedTblPK/*normalizedTbl["PK"]*/ + "])";
+                            FK = "CONSTRAINT [FK_" + GetTableName(type) + "_" + item.Name + "] FOREIGN KEY ([" + item.Name + "Id]) REFERENCES [dbo].[" + GetTableName(item.PropertyType) + "] ([" + normalizedTblPK + "])";
 
                         }
-                        else
-                        {
-                            Type collectionType = item.PropertyType.GetTypeOfT();
+                        //else
+                        //{
+                        //    Type listType = item.PropertyType.GetTypeOfT();
 
-                            if (!collectionType.IsSystemType())
-                            {
-                                normalizedTblPK = CreateIntermaiateTable(item.PropertyType);
+                        //    if (!listType.IsSystemType())
+                        //    {
+                        //        //normalizedTblPK = CreateIntermaiateTable(item.PropertyType);
+                        //        normalizedTblPK = CreateTable(listType);
 
-                                FK = "CONSTRAINT [FK_" + ((type.Name.IsPlural()) ? type.Name + "e" : type.Name) + "s_" + collectionType.Name + "Collection] FOREIGN KEY ([" + item.Name + "CollectionId]) REFERENCES [dbo].[" + collectionType.Name + "Collection] ([" + normalizedTblPK/*normalizedTbl["PK"]*/ + "])";
-                            }
-                        }
+                        //        //FK = "CONSTRAINT [FK_" + GetTableName(type) + "_" + GetTableName(item.PropertyType) + "Id] FOREIGN KEY ([" + listType.Name + "CollectionId]) REFERENCES [dbo].[" + listType.Name + "Collections] ([" + normalizedTblPK + "])";
+                        //    }
+                        //}
 
                         if (FK != null)
                             FKs.Add(FK);
 
                     }
+
+
+                    columns.Add(
+                            String.Format(
+                                _partialProcs["CreateColumn"],
+
+                                !ShouldNormalize(item.PropertyType)
+                                    ? item.Name
+                                    : !item.PropertyType.IsCollection()
+                                    ? item.Name + "Id"
+                                    : item.PropertyType.GetTypeOfT().Name + "CollectionId",
+
+                                DeterminSQLType(item.PropertyType),
+
+                                (!NeedsIdProp(type))
+                                    ? "IDENTITY (1, 1) NOT NULL, "
+                                    : props[props.Length - 1] == item
+                                    ? "NOT NULL, CONSTRAINT [PK_" + GetTableName(type) + "] PRIMARY KEY CLUSTERED ([" + props[0].Name + "] ASC)," + String.Join(", ", FKs.ToArray())
+                                    : "NOT NULL, "
+                            )
+                        );
                 }
             }
 
 
 
             string table = String.Concat(columns.ToArray());
-            string query = String.Format(_partialProcs["CreateTable"], ((type.Name.IsPlural()) ? type.Name + "e" : type.Name), table);
+            string query = String.Format(_partialProcs["CreateTable"], GetTableName(type), table);
+
+            return query;
+        }
+
+        private string GetCreateIntermaiateTableQuery(Type parentClass, Type collection)
+        {
+            if (parentClass.GetProperties().Any(a => a.PropertyType == collection))
+                throw new Exception("parentClass does not have any properties of the collection Type");
+
+            List<string> columns = new List<string>();
+            Type listType = collection.GetTypeOfT();
+
+
+            string PK = CreateTable(listType);
+            string collectionFK = "CONSTRAINT [FK_" + GetTableName(collection) + "_" + GetTableName(listType) + "] FOREIGN KEY ([" + listType.Name + "Id]) REFERENCES [dbo].[" + GetTableName(listType) + "] ([" + PK + "])";
+            string mainTblFK = "CONSTRAINT [FK_" + GetTableName(parentClass) + "_" + GetTableName(collection) + "] FOREIGN KEY ([" + parentClass.Name + "Id]) REFERENCES [dbo].[" + GetTableName(parentClass) + "] ([" + PK + "])";
+
+
+
+            for (int i = 0; i < 2; i++)
+            {
+                columns.Add(
+                    String.Format(
+                        _partialProcs["CreateColumn"],
+                        i == 0 ? parentClass.Name + "Id" : listType.Name + "Id",
+                        DeterminSQLType(typeof(int)),
+                        "NOT NULL, " + ((i == 0) ? "" : collectionFK)
+                    )
+                );
+            }
+
+            string table = String.Concat(columns.ToArray());
+            string query = String.Format(_partialProcs["CreateTable"], GetTableName(collection), table);
 
             return query;
         }
@@ -538,7 +617,7 @@ namespace NostreetsORM
             for (int i = 1; i < fields.Length; i++)
             {
                 DataProvider.ExecuteNonQuery(() => Connection,
-                                "dbo." + ((type.Name.IsPlural()) ? type.Name + "e" : type.Name) + "s_Insert",
+                                "dbo." + GetTableName(type) + "_Insert",
                                 (param) => param.Add(new SqlParameter("Value", fields[i].Name)),
                                 null);
             }
@@ -556,10 +635,10 @@ namespace NostreetsORM
 
             if (!CheckIfTableExist(type))
             {
-                string query = GetTableCreationQuery(type);
-
-
+                string query = GetCreateTableQuery(type);
                 int isTrue = 0;
+
+
                 DataProvider.ExecuteCmd(() => Connection,
                    query,
                     null,
@@ -571,19 +650,22 @@ namespace NostreetsORM
                     mod => mod.CommandType = CommandType.Text);
 
 
-                if (isTrue == 1)
-                {
-                    CreateProcedures(type);
+                if (isTrue != 1)
+                    throw new Exception("{0} Table Creation was not successful...".FormatString(type.Name));
 
-                    if (type.IsClass && (type != typeof(String) || type != typeof(Char)))
-                    {
-                        result = type.GetProperties()[0].Name;
-                    }
-                    else if (type.BaseType == typeof(Enum))
-                    {
-                        AddEnumsAsRows(type);
-                        result = "Id";
-                    }
+
+                CreateIntermaiateTables(type);
+                CreateProcedures(type);
+
+
+                if (type.IsClass && (type != typeof(String) || type != typeof(Char)))
+                {
+                    result = type.GetProperties()[0].Name;
+                }
+                else if (type.BaseType == typeof(Enum))
+                {
+                    AddEnumsAsRows(type);
+                    result = "Id";
                 }
 
             }
@@ -615,7 +697,7 @@ namespace NostreetsORM
             if (CheckIfTableExist(type))
             {
                 string sqlTemp = _partialProcs["CopyTableStatement"];
-                string query = String.Format(sqlTemp, ((type.Name.IsPlural()) ? type.Name + "e" : type.Name), "temp" + ((type.Name.IsPlural()) ? type.Name + "e" : type.Name), "*");
+                string query = String.Format(sqlTemp, GetTableName(type), "temp" + GetTableName(type), "*");
                 object result = null;
 
                 DataProvider.ExecuteCmd(() => Connection,
@@ -637,14 +719,27 @@ namespace NostreetsORM
 
                 string query = null;
 
-                if (type.IsClass && (type != typeof(String) || type != typeof(Char)))
+                if (type.IsCollection())
                 {
-                    query = GetCRUDProcsForClass(type, template);
+                    if (template.Key == "Delete" || template.Key == "Insert" || template.Key == "Update")
+                        continue;
 
+                    query = GetProcsForCollection(type, template);
                 }
                 else if (type.BaseType == typeof(Enum))
                 {
-                    query = GetCRUDProcsForEnum(type, template);
+                    if (template.Key == "Delete" || template.Key == "InsertWithID")
+                        continue;
+
+                    query = GetProcsForEnum(type, template);
+                }
+                else if (type.IsClass && (type != typeof(String) || type != typeof(Char)))
+                {
+                    if (template.Key == "InsertWithID")
+                        continue;
+
+                    query = GetProcsForClass(type, template);
+
                 }
 
 
@@ -661,56 +756,46 @@ namespace NostreetsORM
 
         }
 
-        private string CreateIntermaiateTable(Type type)
+        private string CreateIntermaiateTables(Type type)
         {
-            if (!type.IsCollection())
-                throw new Exception("type has to implement IEnumerable...");
 
-            string result = null;
-
-            if (!CheckIfTableExist(type))
+            if (!type.GetProperties().Any(a => a.PropertyType.IsCollection()))
             {
-                List<string> columns = new List<string>();
-                Type collType = type.GetTypeOfT();
-
-
-                string PK = CreateTable(collType);
-                string FK = "CONSTRAINT [FK_" + ((collType.Name.IsPlural()) ? collType.Name + "e" : collType.Name) + "Collection_" + ((collType.Name.IsPlural()) ? collType.Name + "e" : collType.Name) + "] FOREIGN KEY ([" + ((collType.Name.IsPlural()) ? collType.Name + "e" : collType.Name) + "Id]) REFERENCES [dbo].[" + ((collType.Name.IsPlural()) ? collType.Name + "e" : collType.Name) + "s] ([" + PK + "])";
-
-                for (int i = 0; i < 2; i++)
+                foreach (PropertyInfo prop in type.GetProperties())
                 {
-                    columns.Add(
-                        String.Format(
-                            _partialProcs["CreateColumn"],
-                            i == 0 ? "Id" : ((collType.Name.IsPlural()) ? collType.Name + "e" : collType.Name) + "Id",
-                            DeterminSQLType(typeof(int)),
-                            (i == 0)
-                                ? "IDENTITY (1, 1) NOT NULL, "
-                                : "NOT NULL, CONSTRAINT [PK_" + ((collType.Name.IsPlural()) ? collType.Name + "e" : collType.Name) + "Collection] PRIMARY KEY CLUSTERED ([Id] ASC)," + FK
-                        )
-                    );
+                    if (!prop.PropertyType.IsCollection())
+                        continue; //throw new Exception("type has to implement IEnumerable...");
+
+                    if (prop.PropertyType.GetTypeOfT().IsSystemType())
+                        continue; // throw new Exception("Generic T Type has to be a custom class...");
+
+                    if (!CheckIfTableExist(type) || !CheckIfTableExist(prop.PropertyType.GetTypeOfT()))
+                        throw new Exception("Both {0} and {1} has to be in the database to make an intermediate table between the two...");
+
+
+                    string result = null;
+                    int isTrue = 0;
+                    string query = GetCreateIntermaiateTableQuery(type, prop.PropertyType);
+
+
+                    DataProvider.ExecuteCmd(() => Connection,
+                          query,
+                           null,
+                           (reader, set) =>
+                           {
+                               isTrue = reader.GetSafeInt32(0);
+                           },
+                           null,
+                           mod => mod.CommandType = CommandType.Text);
+
+
+                    if (isTrue != 1)
+                        throw new Exception("Intermediate Table Create between {0} and {1} was not successful...");
+
+
+                    result = type.Name + "Id";
+                    CreateProcedures(prop.PropertyType);
                 }
-
-                string table = String.Concat(columns.ToArray());
-                string query = String.Format(_partialProcs["CreateTable"], collType.Name + "Collection", table);
-
-
-                DataProvider.ExecuteCmd(() => Connection,
-                      query,
-                       null,
-                       (reader, set) =>
-                       {
-                           object output = reader.GetValue(0);
-                       },
-                       null,
-                       mod => mod.CommandType = CommandType.Text);
-
-                result = "Id";
-
-            }
-            else
-            {
-                result = "Id";
             }
 
             return result;
@@ -722,7 +807,7 @@ namespace NostreetsORM
             if (CheckIfBackUpExist(type))
             {
                 string sqlTemp = _partialProcs["DropTableStatement"];
-                string query = String.Format(sqlTemp, "temp" + ((type.IsCollection()) ? type.GetTypeOfT().Name + "Collection" : (type.Name.IsPlural()) ? type.Name + "e" : type.Name));
+                string query = String.Format(sqlTemp, "temp" + GetTableName(type));
                 object result = null;
 
                 DataProvider.ExecuteCmd(() => Connection,
@@ -767,7 +852,7 @@ namespace NostreetsORM
             if (CheckIfTableExist(type))
             {
                 string sqlTemp = _partialProcs["DropTableStatement"];
-                string query = String.Format(sqlTemp, ((type.IsCollection()) ? type.GetTypeOfT().Name + "Collection" : (type.Name.IsPlural()) ? type.Name + "e" : type.Name));
+                string query = String.Format(sqlTemp, GetTableName(type));
 
                 object result = null;
 
@@ -795,10 +880,10 @@ namespace NostreetsORM
 
                 string columns = String.Join(", ", matchingColumns);
 
-                string query = _partialProcs["IdentityInsertStatement"].FormatString(((type.Name.IsPlural()) ? type.Name + "e" : type.Name), "ON");
-                query += _partialProcs["InsertIntoStatement"].FormatString(((type.Name.IsPlural()) ? type.Name + "e" : type.Name), columns);
+                string query = _partialProcs["IdentityInsertStatement"].FormatString(GetTableName(type), "ON");
+                query += _partialProcs["InsertIntoStatement"].FormatString(GetTableName(type), columns);
                 query += _partialProcs["SelectStatement"].FormatString(columns);
-                query += _partialProcs["FromStatement"].FormatString("temp" + ((type.Name.IsPlural()) ? type.Name + "e" : type.Name));
+                query += _partialProcs["FromStatement"].FormatString("temp" + GetTableName(type));
 
                 DataProvider.ExecuteCmd(() => Connection,
                    query,
@@ -818,7 +903,7 @@ namespace NostreetsORM
 
         private List<string> GetOldColumns(Type type)
         {
-            string query = _partialProcs["GetAllColumns"].FormatString("temp" + ((type.Name.IsPlural()) ? type.Name + "e" : type.Name));
+            string query = _partialProcs["GetAllColumns"].FormatString("temp" + GetTableName(type));
             List<string> list = null;
 
             DataProvider.ExecuteCmd(() => Connection,
@@ -854,7 +939,7 @@ namespace NostreetsORM
                 null, mod => mod.CommandType = CommandType.Text);
 
 
-            List<string> result = list?.Where(a => a.Contains(((type.Name.IsPlural()) ? type.Name + "e" : type.Name))).ToList();
+            List<string> result = list?.Where(a => a.Contains(GetTableName(type))).ToList();
 
             return result;
         }
@@ -866,7 +951,7 @@ namespace NostreetsORM
                                     dbEnums = null;
 
             DataProvider.ExecuteCmd(() => Connection,
-                "SELECT * FROM {0}s".FormatString(((type.Name.IsPlural()) ? type.Name + "e" : type.Name)), null,
+                "SELECT * FROM {0}s".FormatString(GetTableName(type)), null,
                 (reader, set) =>
                 {
                     if (dbEnums == null)
@@ -884,7 +969,7 @@ namespace NostreetsORM
         private bool CheckIfTableExist(Type type)
         {
             string sqlTemp = _partialProcs["CheckIfTableExist"];
-            string query = String.Format(sqlTemp, (type.IsCollection()) ? ((type.Name.IsPlural()) ? type.Name + "e" : type.Name) + "Collection" : ((type.Name.IsPlural()) ? type.Name + "e" : type.Name));
+            string query = String.Format(sqlTemp, GetTableName(type));
 
             int isTrue = 0;
             DataProvider.ExecuteCmd(() => Connection,
@@ -904,7 +989,7 @@ namespace NostreetsORM
         private bool CheckIfBackUpExist(Type type)
         {
             string sqlTemp = _partialProcs["CheckIfTableExist"];
-            string query = String.Format(sqlTemp, "temp" + ((type.Name.IsPlural()) ? type.Name + "e" : type.Name));
+            string query = String.Format(sqlTemp, "temp" + GetTableName(type));
 
             int isTrue = 0;
             DataProvider.ExecuteCmd(() => Connection,
@@ -929,11 +1014,11 @@ namespace NostreetsORM
             else if (!type.IsEnum)
             {
                 List<PropertyInfo> baseProps = type.GetProperties().ToList();
-                List<string> columnsInTable = DataProvider.GetSchema(() => Connection, ((type.Name.IsPlural()) ? type.Name + "e" : type.Name) + 's');
+                List<string> columnsInTable = DataProvider.GetSchema(() => Connection, GetTableName(type));
                 Func<PropertyInfo, bool> predicate = (a) =>
                 {
                     bool _result = false;
-                    _result = columnsInTable.Any(b => b == (!(ShouldNormalize(a.PropertyType)) ? a.Name : a.PropertyType.IsCollection() ? a.PropertyType.GetTypeOfT().Name + "CollectionId" : a.Name + "Id"));
+                    _result = columnsInTable.Any(b => b == (!(ShouldNormalize(a.PropertyType)) ? a.Name : a.PropertyType.IsCollection() ? a.PropertyType.GetTypeOfT().Name + "Id" : a.Name + "Id"));
 
                     return _result;
                 };
@@ -964,7 +1049,8 @@ namespace NostreetsORM
         public List<T> GetAll()
         {
             List<T> list = null;
-            DataProvider.ExecuteCmd(() => Connection, "dbo." + ((_type.Name.IsPlural()) ? _type.Name + "e" : _type.Name) + "s_SelectAll",
+
+            DataProvider.ExecuteCmd(() => Connection, "dbo." + GetTableName(_type) + "_SelectAll",
                 null,
                 (reader, set) =>
                 {
@@ -977,14 +1063,16 @@ namespace NostreetsORM
 
         public void Delete(object id)
         {
-            DataProvider.ExecuteNonQuery(() => Connection, "dbo." + ((_type.Name.IsPlural()) ? _type.Name + "e" : _type.Name) + "s_Delete",
+
+            DataProvider.ExecuteNonQuery(() => Connection, "dbo." + GetTableName(_type) + "_Delete",
                 param => param.Add(new SqlParameter(typeof(T).GetProperties()[0].Name, typeof(T).GetProperties()[0].GetValue(id))));
         }
 
         public T Get(object id)
         {
             T chart = default(T);
-            DataProvider.ExecuteCmd(() => Connection, "dbo." + ((_type.Name.IsPlural()) ? _type.Name + "e" : _type.Name) + "s_SelectById",
+
+            DataProvider.ExecuteCmd(() => Connection, "dbo." + GetTableName(_type) + "_SelectById",
                 param => param.Add(new SqlParameter(typeof(T).GetProperties()[0].Name, typeof(T).GetProperties()[0].GetValue(id))),
                 (reader, set) =>
                 {
@@ -996,7 +1084,8 @@ namespace NostreetsORM
         public object Insert(T model)
         {
             object id = 0;
-            DataProvider.ExecuteCmd(() => Connection, "dbo." + ((_type.Name.IsPlural()) ? _type.Name + "e" : _type.Name) + "s_Insert",
+
+            DataProvider.ExecuteCmd(() => Connection, "dbo." + GetTableName(_type) + "_Insert",
                        param =>
                        {
                            foreach (var prop in typeof(T).GetProperties())
@@ -1025,7 +1114,7 @@ namespace NostreetsORM
 
         public void Update(T model)
         {
-            DataProvider.ExecuteNonQuery(() => Connection, "dbo." + ((_type.Name.IsPlural()) ? _type.Name + "e" : _type.Name) + "s_Update",
+            DataProvider.ExecuteNonQuery(() => Connection, "dbo." + GetTableName(_type) + "_Update",
                        param =>
                        {
                            param.Add(new SqlParameter(typeof(T).GetProperties()[0].Name, typeof(T).GetProperties()[0].GetValue(model)));
