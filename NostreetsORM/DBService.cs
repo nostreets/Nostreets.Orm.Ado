@@ -14,13 +14,18 @@ using System.Collections;
 
 namespace NostreetsORM
 {
-    public class DBService<T> : SqlService, IDBService<T>
+
+
+    public class DBService : SqlService, IDBService
     {
-        public DBService() : base()
+        public DBService(Type type) : base()
         {
             try
             {
+                _type = type;
                 SetUp();
+
+
                 bool doesExist = CheckIfTableExist(_type),
                      isCurrent = !CheckIfTypeIsCurrent(_type) ? false : SubTablesAccessed.All(a => CheckIfTypeIsCurrent(a.Key)) ? true : false;
 
@@ -40,12 +45,15 @@ namespace NostreetsORM
             }
         }
 
-        public DBService(string connectionKey) : base(connectionKey)
+        public DBService(Type type, string connectionKey) : base(connectionKey)
         {
 
             try
             {
+                _type = type;
                 SetUp();
+
+
                 bool doesExist = CheckIfTableExist(_type),
                      isCurrent = !CheckIfTypeIsCurrent(_type) ? false : SubTablesAccessed.All(a => CheckIfTypeIsCurrent(a.Key)) ? true : false;
 
@@ -87,7 +95,7 @@ namespace NostreetsORM
 
         private int _tableLayer = 0;
         private bool _tableCreation = false;
-        private Type _type = typeof(T);
+        private Type _type = null;
         private Dictionary<string, string> _partialProcs = new Dictionary<string, string>();
 
 
@@ -209,10 +217,15 @@ namespace NostreetsORM
             {
                 foreach (PropertyInfo prop in relations)
                 {
+                    Type propType = prop.PropertyType;
+
                     if (list == null)
                         list = new List<Type>();
 
-                    list.Add(prop.PropertyType);
+                    if (NeedsIdProp(propType))
+                        propType = type.AddProperty(typeof(int), "Id");
+
+                    list.Add(propType);
                 }
 
                 result = list?.Distinct().ToArray();
@@ -394,16 +407,20 @@ namespace NostreetsORM
 
             for (int i = 0; i < props.Length; i++)
             {
-                string PK = (props[i].PropertyType.BaseType == typeof(Enum) ? "Id" : props[i].Name);
+                if (props[i].PropertyType.IsCollection())
+                    continue;
 
+
+                string PK = (props[i].PropertyType.BaseType == typeof(Enum) ? "Id" : props[i].Name);
                 if (i > 0)
                 {
                     inputs.Add("@" + props[i].Name + " " + DeterminSQLType(props[i].PropertyType) + (i == props.Length - 1 ? "" : ","));
 
                     colm.Add('[' +
-                        ((props[i].PropertyType.IsCollection() && !props[i].PropertyType.GetTypeOfT().IsSystemType())
+                        /*((props[i].PropertyType.IsCollection() && !props[i].PropertyType.GetTypeOfT().IsSystemType())
                             ? props[i].PropertyType.GetTypeOfT().Name + "CollectionId"
-                            : (ShouldNormalize(props[i].PropertyType)
+                            :*/
+                        ((ShouldNormalize(props[i].PropertyType)
                             ? props[i].Name + "Id"
                             : props[i].Name))
                             + (i == props.Length - 1 ? "]" : "],"));
@@ -411,33 +428,45 @@ namespace NostreetsORM
                     val.Add("@" + props[i].Name + (i == props.Length - 1 ? "" : ","));
                 }
 
-                updtParams.Add("@" + props[i].Name + DeterminSQLType(props[i].PropertyType) + (i == 0 ? "" : " = NULL") + (i == props.Length - 1 ? "" : ","));
-
-                innerUpdt.Add("SET [" +
-                    ((props[i].PropertyType.IsCollection() && !props[i].PropertyType.GetTypeOfT().IsSystemType())
-                            ? props[i].PropertyType.GetTypeOfT().Name + "CollectionId"
-                            : (ShouldNormalize(props[i].PropertyType)
-                            ? props[i].Name + "Id"
-                            : props[i].Name))
-                     + "] = @" + props[i].Name + " WHERE " + GetTableName(type) + "." + props[0].Name + " = @" + props[0].Name);
-
-
                 if (ShouldNormalize(props[i].PropertyType))
                 {
-                    jns.Add("Inner Join " + 
-                        (props[i].PropertyType.IsCollection() && !props[i].PropertyType.GetTypeOfT().IsSystemType() ? type.Name + "_" : "")
-                        + GetTableName(props[i].PropertyType) + " AS " + props[i].Name + "_ On " + props[i].Name + "_." + (props[i].PropertyType.BaseType == typeof(Enum) ? "Id" : props[i].Name + "Id") + " = " + GetTableName(type) + "." + props[i].Name + "Id");
+                    jns.Add("Inner Join " /*+ (props[i].PropertyType.IsCollection() && !props[i].PropertyType.GetTypeOfT().IsSystemType() ? type.Name + "_" : "")*/
+                        + GetTableName(props[i].PropertyType) + " AS _" + props[i].Name + " On _" + props[i].Name + "." +
+                        (/*(props[i].PropertyType.IsCollection() && props[i].PropertyType.GetTypeOfT().IsSystemType())
+                            ? type.Name + "Id"
+                            :*/ props[i].PropertyType.BaseType == typeof(Enum)
+                            ? "Id"
+                            : GetPKOfTable(props[i].PropertyType))
+                        + " = " + GetTableName(type) + "." +
+                        (/*(props[i].PropertyType.IsCollection() && !props[i].PropertyType.GetTypeOfT().IsSystemType())
+                            ? props[i].PropertyType + "CollectionId"
+                            :*/ props[i].Name + "Id"));
 
-                    if (props[i].PropertyType.BaseType != typeof(Enum))
+
+                    if (!props[i].PropertyType.IsCollection() || props[i].PropertyType.BaseType != typeof(Enum))
                     {
                         dels.Add("Delete " + props[i].Name + " Where " + PK + " = (Select " + PK + " From " + GetTableName(type) + " Where " + PK + " = @" + PK + ")");
                     }
                 }
 
-                sel.Add(GetTableName(type) + ".[" + 
-                    ((props[i].PropertyType.IsCollection() && !props[i].PropertyType.GetTypeOfT().IsSystemType())
+                updtParams.Add("@" + props[i].Name + DeterminSQLType(props[i].PropertyType) + (i == 0 ? "" : " = NULL") + (i == props.Length - 1 ? "" : ","));
+
+                innerUpdt.Add("SET [" +
+                    (/*(props[i].PropertyType.IsCollection() && !props[i].PropertyType.GetTypeOfT().IsSystemType())
                             ? props[i].PropertyType.GetTypeOfT().Name + "CollectionId"
-                            : (ShouldNormalize(props[i].PropertyType)
+                            :*/ (ShouldNormalize(props[i].PropertyType)
+                            ? props[i].Name + "Id"
+                            : props[i].Name))
+                     + "] = @" + props[i].Name + " WHERE " + GetTableName(type) + "." + props[0].Name + " = @" + props[0].Name);
+
+
+
+
+                sel.Add(GetTableName(type) + ".[" +
+                    (/*(props[i].PropertyType.IsCollection() && !props[i].PropertyType.GetTypeOfT().IsSystemType())
+                            ? props[i].PropertyType.GetTypeOfT().Name + "CollectionId"
+                            : */
+                            (ShouldNormalize(props[i].PropertyType)
                             ? props[i].Name + "Id"
                             : props[i].Name)) + "]" + (i == props.Length - 1 ? " " : ","));
             }
@@ -511,9 +540,12 @@ namespace NostreetsORM
 
                 foreach (PropertyInfo item in props)
                 {
+                    if (item.PropertyType.IsCollection())
+                        continue;
+
                     string FK = null;
 
-                    if (ShouldNormalize(item.PropertyType) && !item.PropertyType.IsCollection())
+                    if (ShouldNormalize(item.PropertyType))
                     {
                         string normalizedTblPK = CreateTable(item.PropertyType);
 
@@ -531,8 +563,8 @@ namespace NostreetsORM
 
                                 !ShouldNormalize(item.PropertyType)
                                     ? item.Name
-                                    : item.PropertyType.IsCollection() && !item.PropertyType.GetTypeOfT().IsSystemType()
-                                    ? item.PropertyType.GetTypeOfT().Name + "CollectionId"
+                                    /*: item.PropertyType.IsCollection() && !item.PropertyType.GetTypeOfT().IsSystemType()
+                                    ? item.PropertyType.GetTypeOfT().Name + "CollectionId" */
                                     : item.Name + "Id",
 
                                 DeterminSQLType(item.PropertyType),
@@ -624,6 +656,34 @@ namespace NostreetsORM
 
         #region Queries To Write
 
+        private void UpdateRows(Type type)
+        {
+            if (CheckIfTableExist(type) && CheckIfBackUpExist(type))
+            {
+                object result = null;
+                PropertyInfo[] props = type.GetProperties();
+                List<string> oldColumns = GetOldColumns(type);
+                List<string> matchingColumns = oldColumns.Where(a => props.Any(b => a == ((ShouldNormalize(b.PropertyType)) ? b.Name + "Id" : b.Name))).ToList();
+
+                string columns = String.Join(", ", matchingColumns);
+
+                string query = _partialProcs["IdentityInsertStatement"].FormatString(GetTableName(type), "ON");
+                query += _partialProcs["InsertIntoStatement"].FormatString(GetTableName(type), columns);
+                query += _partialProcs["SelectStatement"].FormatString(columns);
+                query += _partialProcs["FromStatement"].FormatString("temp" + GetTableName(type));
+
+                DataProvider.ExecuteCmd(() => Connection,
+                   query,
+                    null,
+                    (reader, set) =>
+                    {
+                        result = DataMapper<object>.Instance.MapToObject(reader);
+                    },
+                    null, mod => mod.CommandType = CommandType.Text);
+            }
+
+        }
+
         private void AddEnumsAsRows(Type type)
         {
             if (type.BaseType != typeof(Enum))
@@ -708,6 +768,52 @@ namespace NostreetsORM
             return result;
         }
 
+        private void CreateIntermaiateTables(Type type)
+        {
+            string result = null;
+
+            if (type.GetProperties().Length > 0 && type.GetProperties().Any(a => a.PropertyType.IsCollection()))
+            {
+                foreach (PropertyInfo prop in type.GetProperties())
+                {
+                    if (!prop.PropertyType.IsCollection())
+                        continue; //throw new Exception("type has to implement IEnumerable...");
+
+                    if (prop.PropertyType.GetTypeOfT().IsSystemType())
+                        continue; // throw new Exception("Generic T Type has to be a custom class...");
+
+                    if (!CheckIfTableExist(type))
+                        throw new Exception("{0} has to be a table in the database to make an intermediate table between the two...".FormatString(type.Name));
+
+
+                    int isTrue = 0;
+                    string query = GetCreateIntermaiateTableQuery(type, prop.PropertyType);
+
+
+                    DataProvider.ExecuteCmd(() => Connection,
+                          query,
+                           null,
+                           (reader, set) =>
+                           {
+                               isTrue = reader.GetSafeInt32(0);
+                           },
+                           null,
+                           mod => mod.CommandType = CommandType.Text);
+
+
+                    if (isTrue != 1)
+                        throw new Exception("Intermediate Table Create between {0} and {1} was not successful...".FormatString(type.Name, prop.PropertyType.Name));
+
+
+                    result = type.Name + "Id";
+                    CreateProcedures(prop.PropertyType, type.Name + "_");
+                }
+            }
+
+            //return result;
+
+        }
+
         private void CreateBackupTable(Type type, string prefix = null)
         {
             if (CheckIfTableExist(type, prefix))
@@ -768,52 +874,6 @@ namespace NostreetsORM
                     null, mod => mod.CommandType = System.Data.CommandType.Text);
             }
 
-
-        }
-
-        private void CreateIntermaiateTables(Type type)
-        {
-            string result = null;
-
-            if (type.GetProperties().Length > 0 && type.GetProperties().Any(a => a.PropertyType.IsCollection()))
-            {
-                foreach (PropertyInfo prop in type.GetProperties())
-                {
-                    if (!prop.PropertyType.IsCollection())
-                        continue; //throw new Exception("type has to implement IEnumerable...");
-
-                    if (prop.PropertyType.GetTypeOfT().IsSystemType())
-                        continue; // throw new Exception("Generic T Type has to be a custom class...");
-
-                    if (!CheckIfTableExist(type))
-                        throw new Exception("{0} has to be a table in the database to make an intermediate table between the two...".FormatString(type.Name));
-
-
-                    int isTrue = 0;
-                    string query = GetCreateIntermaiateTableQuery(type, prop.PropertyType);
-
-
-                    DataProvider.ExecuteCmd(() => Connection,
-                          query,
-                           null,
-                           (reader, set) =>
-                           {
-                               isTrue = reader.GetSafeInt32(0);
-                           },
-                           null,
-                           mod => mod.CommandType = CommandType.Text);
-
-
-                    if (isTrue != 1)
-                        throw new Exception("Intermediate Table Create between {0} and {1} was not successful...".FormatString(type.Name, prop.PropertyType.Name));
-
-
-                    result = type.Name + "Id";
-                    CreateProcedures(prop.PropertyType, type.Name + "_");
-                }
-            }
-
-            //return result;
 
         }
 
@@ -884,37 +944,31 @@ namespace NostreetsORM
             }
         }
 
-        private void UpdateRows(Type type)
+        #endregion
+
+        #region Queries To Read
+
+        private string GetPKOfTable(Type type)
         {
-            if (CheckIfTableExist(type) && CheckIfBackUpExist(type))
+            string result = null;
+            if (CheckIfTableExist(type))
             {
-                object result = null;
-                PropertyInfo[] props = type.GetProperties();
-                List<string> oldColumns = GetOldColumns(type);
-                List<string> matchingColumns = oldColumns.Where(a => props.Any(b => a == ((ShouldNormalize(b.PropertyType)) ? b.Name + "Id" : b.Name))).ToList();
+                string query = _partialProcs["GetPKOfTable"].FormatString(GetTableName(type));
 
-                string columns = String.Join(", ", matchingColumns);
-
-                string query = _partialProcs["IdentityInsertStatement"].FormatString(GetTableName(type), "ON");
-                query += _partialProcs["InsertIntoStatement"].FormatString(GetTableName(type), columns);
-                query += _partialProcs["SelectStatement"].FormatString(columns);
-                query += _partialProcs["FromStatement"].FormatString("temp" + GetTableName(type));
 
                 DataProvider.ExecuteCmd(() => Connection,
                    query,
                     null,
                     (reader, set) =>
                     {
-                        result = DataMapper<object>.Instance.MapToObject(reader);
+                        result = reader.GetString(0);
                     },
                     null, mod => mod.CommandType = CommandType.Text);
+
             }
 
+            return result;
         }
-
-        #endregion
-
-        #region Queries To Read
 
         private List<string> GetOldColumns(Type type)
         {
@@ -937,28 +991,6 @@ namespace NostreetsORM
 
         }
 
-        private List<string> GetAllProcs(Type type, string prefix = null)
-        {
-            string query = _partialProcs["GetAllProcs"];
-            List<string> list = null;
-
-            DataProvider.ExecuteCmd(() => Connection,
-               query,
-                null,
-                (reader, set) =>
-                {
-                    string proc = DataMapper<string>.Instance.MapToObject(reader);
-                    if (list == null) { list = new List<string>(); }
-                    list.Add(proc);
-                },
-                null, mod => mod.CommandType = CommandType.Text);
-
-
-            List<string> result = list?.Where(a => a.Contains(GetTableName(type, prefix))).ToList();
-
-            return result;
-        }
-
         private bool CheckIfEnumIsCurrent(Type type)
         {
             bool result = false;
@@ -977,6 +1009,65 @@ namespace NostreetsORM
                 }, null, cmd => cmd.CommandType = CommandType.Text);
 
             if (currentEnums.Count == dbEnums.Count) { result = true; }
+
+            return result;
+        }
+
+        private bool CheckIfTypeIsCurrent(Type type)
+        {
+            bool result = true;
+
+            if (!CheckIfTableExist(type)) { result = false; }
+            else if (!type.IsEnum)
+            {
+                List<PropertyInfo> baseProps = type.GetProperties().ToList();
+                List<string> columnsInTable = DataProvider.GetSchema(() => Connection, GetTableName(type));
+                Func<PropertyInfo, bool> predicate = (a) =>
+                {
+                    bool _result = false;
+                    _result = columnsInTable.Any(b => b == (!(ShouldNormalize(a.PropertyType)) ? a.Name : a.PropertyType.IsCollection() ? a.PropertyType.GetTypeOfT().Name + "Id" : a.Name + "Id"));
+
+                    return _result;
+                };
+
+
+                List<PropertyInfo> excludedProps = baseProps.GetPropertiesByAttribute<NotMappedAttribute>(type);
+                List<PropertyInfo> includedProps = (excludedProps.Count > 0) ? baseProps.Where(a => excludedProps.Any(b => b.Name != a.Name)).ToList() : baseProps;
+                List<PropertyInfo> matchingProps = includedProps.Where(a => columnsInTable.Any(b => b == ((ShouldNormalize(a.PropertyType)) ? a.Name + "Id" : a.Name))).ToList();
+
+                if (matchingProps.Count != includedProps.Count)
+                {
+                    result = false;
+                }
+
+            }
+            else
+            {
+                result = CheckIfEnumIsCurrent(type);
+            }
+
+            return result;
+
+        }
+
+        private List<string> GetAllProcs(Type type, string prefix = null)
+        {
+            string query = _partialProcs["GetAllProcs"];
+            List<string> list = null;
+
+            DataProvider.ExecuteCmd(() => Connection,
+               query,
+                null,
+                (reader, set) =>
+                {
+                    string proc = DataMapper<string>.Instance.MapToObject(reader);
+                    if (list == null) { list = new List<string>(); }
+                    list.Add(proc);
+                },
+                null, mod => mod.CommandType = CommandType.Text);
+
+
+            List<string> result = list?.Where(a => a.Contains(GetTableName(type, prefix))).ToList();
 
             return result;
         }
@@ -1021,57 +1112,21 @@ namespace NostreetsORM
             return false;
         }
 
-        private bool CheckIfTypeIsCurrent(Type type)
-        {
-            bool result = true;
-
-            if (!CheckIfTableExist(type)) { result = false; }
-            else if (!type.IsEnum)
-            {
-                List<PropertyInfo> baseProps = type.GetProperties().ToList();
-                List<string> columnsInTable = DataProvider.GetSchema(() => Connection, GetTableName(type));
-                Func<PropertyInfo, bool> predicate = (a) =>
-                {
-                    bool _result = false;
-                    _result = columnsInTable.Any(b => b == (!(ShouldNormalize(a.PropertyType)) ? a.Name : a.PropertyType.IsCollection() ? a.PropertyType.GetTypeOfT().Name + "Id" : a.Name + "Id"));
-
-                    return _result;
-                };
-
-
-                List<PropertyInfo> excludedProps = baseProps.GetPropertiesByAttribute<NotMappedAttribute>(type);
-                List<PropertyInfo> includedProps = (excludedProps.Count > 0) ? baseProps.Where(a => excludedProps.Any(b => b.Name != a.Name)).ToList() : baseProps;
-                List<PropertyInfo> matchingProps = includedProps.Where(a => columnsInTable.Any(b => b == ((ShouldNormalize(a.PropertyType)) ? a.Name + "Id" : a.Name))).ToList();
-
-                if (matchingProps.Count != includedProps.Count)
-                {
-                    result = false;
-                }
-
-            }
-            else
-            {
-                result = CheckIfEnumIsCurrent(type);
-            }
-
-            return result;
-
-        }
         #endregion
 
         #region Public Methods
 
-        public List<T> GetAll()
+        public List<object> GetAll()
         {
-            List<T> list = null;
+            List<object> list = null;
 
             DataProvider.ExecuteCmd(() => Connection, "dbo." + GetTableName(_type) + "_SelectAll",
                 null,
                 (reader, set) =>
                 {
-                    T chart = DataMapper<T>.Instance.MapToObject(reader);
-                    if (list == null) { list = new List<T>(); }
-                    list.Add(chart);
+                    object item = DataMapper.MapToObject(reader, _type);
+                    if (list == null) { list = new List<object>(); }
+                    list.Add(item);
                 });
             return list;
         }
@@ -1080,66 +1135,132 @@ namespace NostreetsORM
         {
 
             DataProvider.ExecuteNonQuery(() => Connection, "dbo." + GetTableName(_type) + "_Delete",
-                param => param.Add(new SqlParameter(typeof(T).GetProperties()[0].Name, typeof(T).GetProperties()[0].GetValue(id))));
+                param => param.Add(new SqlParameter(_type.GetProperties()[0].Name, _type.GetProperties()[0].GetValue(id))));
         }
 
-        public T Get(object id)
+        public object Get(object id)
         {
-            T chart = default(T);
+            object item = null;
 
             DataProvider.ExecuteCmd(() => Connection, "dbo." + GetTableName(_type) + "_SelectById",
-                param => param.Add(new SqlParameter(typeof(T).GetProperties()[0].Name, typeof(T).GetProperties()[0].GetValue(id))),
+                param => param.Add(new SqlParameter(_type.GetProperties()[0].Name, _type.GetProperties()[0].GetValue(id))),
                 (reader, set) =>
                 {
-                    chart = DataMapper<T>.Instance.MapToObject(reader);
+                    item = DataMapper.MapToObject(reader, _type);
                 });
-            return chart;
+            return item;
         }
 
-        public object Insert(T model)
+        public object[] Insert(object model)
         {
+            if (model.GetType() != _type)
+                throw new Exception("model Parameter is the wrong type...");
+
+
+            object[] result = null;
+            List<object> ids = new List<object>();
+            Dictionary<KeyValuePair<Type, Type>, KeyValuePair<int, int[]>> relations = new Dictionary<KeyValuePair<Type, Type>, KeyValuePair<int, int[]>>();
+            Dictionary<Type, object[]> rowsToInsert = new Dictionary<Type, object[]>();
+            Dictionary<Type, object> subTblIds = new Dictionary<Type, object>();
+            PropertyInfo[] normalizedProps = model.GetType().GetProperties().Where(a => !a.PropertyType.IsEnum && ShouldNormalize(a.PropertyType)).ToArray();
+
+            foreach (PropertyInfo tbl in normalizedProps)
+            {
+                if (tbl.PropertyType.IsCollection() && !tbl.PropertyType.GetTypeOfT().IsSystemType())
+                {
+                    object[] list = ((IEnumerable<object>)model.GetPropertyValue(tbl.Name)).ToArray();
+                    Type typeInList = list[0].GetType();
+
+                    rowsToInsert.Add(typeInList, list);
+                    relations.Add(new KeyValuePair<Type, Type>(model.GetType(), typeInList), new KeyValuePair<int, int[]>());
+                }
+                else if (tbl.PropertyType.IsClass)
+                {
+                    PropertyInfo[] subProps = tbl.PropertyType.GetProperties().Where(a => !a.PropertyType.IsEnum && ShouldNormalize(a.PropertyType)).ToArray();
+
+                    if (subProps != null && subProps.Length > 0)
+                    {
+                        foreach (PropertyInfo subProp in subProps)
+                        {
+                            object[] id = Insert(subProp.GetValue(tbl));
+                            subTblIds.Add(subProp.PropertyType, id[0]);
+                        }
+
+                    }
+
+                    object[] id = Insert(model.GetPropertyValue(tbl.Name));
+                    //rowsToInsert.Add(tbl.PropertyType, new[] { model.GetPropertyValue(tbl.Name) });
+                }
+            }
+            rowsToInsert.Add(model.GetType(), new[] { model });
+
+
+            foreach (KeyValuePair<Type, object[]> pair in rowsToInsert)
+            {
+                foreach (object row in pair.Value)
+                {
+                    object id = Insert(pair.Key, row, subTblIds);
+                    subTblIds.Add(pair.Key, id);
+                    ids.Add(id);
+                }
+            }
+
+
+            return ids.Count > 0 ? ids.ToArray() : null;
+        }
+
+        private object Insert(Type type, object model, Dictionary<Type, object> ids = null)
+        {
+            if (model.GetType() != type)
+                throw new Exception("model Parameter is the wrong type...");
+
+
             object id = 0;
 
-            DataProvider.ExecuteCmd(() => Connection, "dbo." + GetTableName(_type) + "_Insert",
+            DataProvider.ExecuteCmd(() => Connection, "dbo." + GetTableName(type) + "_Insert",
                        param =>
                        {
-                           foreach (var prop in typeof(T).GetProperties())
+                           PropertyInfo[] props = type.GetProperties();
+
+                           foreach (PropertyInfo prop in props)
                            {
+                               if (prop.PropertyType.IsEnum)
+                                   param.Add(new SqlParameter(prop.Name, (int)prop.GetValue(model)));
 
-                               if (prop.Name != "Id")
-                               {
-                                   if (prop.PropertyType.BaseType.Name == nameof(Enum))
-                                   {
-                                       param.Add(new SqlParameter(prop.Name, (int)prop.GetValue(model)));
+                               else if (ShouldNormalize(prop.PropertyType) && ids.Keys.Any(a => a == prop.PropertyType))
+                                   param.Add(new SqlParameter(prop.Name, ids[prop.PropertyType]));
 
-                                   }
-                                   else
-                                   {
-                                       param.Add(new SqlParameter(prop.Name, prop.GetValue(model)));
-                                   }
-                               }
+                               else
+                                   param.Add(new SqlParameter(prop.Name, prop.GetValue(model)));
                            }
                        },
                       (reader, set) =>
                       {
                           id = DataMapper<object>.Instance.MapToObject(reader);
                       });
+
             return id;
         }
 
-        public void Update(T model)
+        private void InsertRelationship(int parentId, int childId)
+        {
+
+        }
+
+        public void Update(object model)
         {
             DataProvider.ExecuteNonQuery(() => Connection, "dbo." + GetTableName(_type) + "_Update",
                        param =>
                        {
-                           param.Add(new SqlParameter(typeof(T).GetProperties()[0].Name, typeof(T).GetProperties()[0].GetValue(model)));
-                           foreach (var prop in typeof(T).GetProperties())
+                           param.Add(new SqlParameter(_type.GetProperties()[0].Name, typeof(T).GetProperties()[0].GetValue(model)));
+                           foreach (var prop in _type.GetProperties())
                            {
                                param.Add(new SqlParameter(prop.Name, prop.GetValue(model)));
                            }
                        }
                        );
         }
+
         #endregion
 
     }
