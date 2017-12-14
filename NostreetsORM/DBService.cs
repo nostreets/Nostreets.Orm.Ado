@@ -1151,15 +1151,19 @@ namespace NostreetsORM
             return item;
         }
 
-        public object[] Insert(object model)
+        public object Insert(object model)
+        {
+            Dictionary<KeyValuePair<Type, Type>, KeyValuePair<object, object[]>> relations = new Dictionary<KeyValuePair<Type, Type>, KeyValuePair<object, object[]>>();
+            return Insert(model, ref relations);
+        }
+
+        private object Insert(object model, ref Dictionary<KeyValuePair<Type, Type>, KeyValuePair<object, object[]>> relations)
         {
             if (model.GetType() != _type)
                 throw new Exception("model Parameter is the wrong type...");
 
 
-            object[] result = null;
-            List<object> ids = new List<object>();
-            Dictionary<KeyValuePair<Type, Type>, KeyValuePair<int, int[]>> relations = new Dictionary<KeyValuePair<Type, Type>, KeyValuePair<int, int[]>>();
+            object result = null;
             Dictionary<Type, object[]> rowsToInsert = new Dictionary<Type, object[]>();
             Dictionary<Type, object> subTblIds = new Dictionary<Type, object>();
             PropertyInfo[] normalizedProps = model.GetType().GetProperties().Where(a => !a.PropertyType.IsEnum && ShouldNormalize(a.PropertyType)).ToArray();
@@ -1171,46 +1175,110 @@ namespace NostreetsORM
                     object[] list = ((IEnumerable<object>)model.GetPropertyValue(tbl.Name)).ToArray();
                     Type typeInList = list[0].GetType();
 
-                    rowsToInsert.Add(typeInList, list);
-                    relations.Add(new KeyValuePair<Type, Type>(model.GetType(), typeInList), new KeyValuePair<int, int[]>());
+
+                    if (list != null && list.Length < 0)
+                    {
+                        List<object> ids = new List<object>();
+                        relations.Add(new KeyValuePair<Type, Type>(model.GetType(), typeInList), new KeyValuePair<object, object[]>(0, null));
+
+                        foreach (object item in list)
+                        {
+                            object subId = Insert(item, ref relations);
+                            ids.Add(subId);
+                        }
+
+                        relations[new KeyValuePair<Type, Type>(model.GetType(), typeInList)] = new KeyValuePair<object, object[]>(0, ids.ToArray());
+                    }
+
+                    //PropertyInfo[] subProps = typeInList.GetProperties().Where(a => !a.PropertyType.IsEnum && ShouldNormalize(a.PropertyType)).ToArray();
+                    //if (subProps != null && subProps.Length > 0)
+                    //{
+                    //    foreach (PropertyInfo subProp in subProps)
+                    //    {
+                    //        object[] subId = Insert(subProp.GetValue(tbl));
+                    //        subTblIds.Add(subProp.PropertyType, subId[0]);
+                    //    }
+
+                    //}
+
+
+                    //rowsToInsert.Add(typeInList, list);
+                    //relations.Add(new KeyValuePair<Type, Type>(model.GetType(), typeInList), new KeyValuePair<int, int[]>());
                 }
                 else if (tbl.PropertyType.IsClass)
                 {
-                    PropertyInfo[] subProps = tbl.PropertyType.GetProperties().Where(a => !a.PropertyType.IsEnum && ShouldNormalize(a.PropertyType)).ToArray();
+                    object subId = Insert(model.GetPropertyValue(tbl.Name), ref relations);
+                    relations.Add(new KeyValuePair<Type, Type>(model.GetType(), tbl.PropertyType), new KeyValuePair<object, object[]>(0, new[] { subId }));
 
-                    if (subProps != null && subProps.Length > 0)
-                    {
-                        foreach (PropertyInfo subProp in subProps)
-                        {
-                            object[] id = Insert(subProp.GetValue(tbl));
-                            subTblIds.Add(subProp.PropertyType, id[0]);
-                        }
 
-                    }
+                    //PropertyInfo[] subProps = tbl.PropertyType.GetProperties().Where(a => !a.PropertyType.IsEnum && ShouldNormalize(a.PropertyType)).ToArray();
+                    //if (subProps != null && subProps.Length > 0)
+                    //{
+                    //    foreach (PropertyInfo subProp in subProps)
+                    //    {
+                    //        object[] subId = Insert(subProp.GetValue(tbl));
+                    //        subTblIds.Add(subProp.PropertyType, subId[0]);
+                    //    }
 
-                    object[] id = Insert(model.GetPropertyValue(tbl.Name));
+                    //}
+
+                    //object[] id = Insert(model.GetPropertyValue(tbl.Name));
                     //rowsToInsert.Add(tbl.PropertyType, new[] { model.GetPropertyValue(tbl.Name) });
                 }
             }
-            rowsToInsert.Add(model.GetType(), new[] { model });
 
+            //rowsToInsert.Add(model.GetType(), new[] { model });
 
-            foreach (KeyValuePair<Type, object[]> pair in rowsToInsert)
+            Dictionary<Type, object> refs = new Dictionary<Type, object>();
+            foreach (PropertyInfo prop in model.GetType().GetProperties())
             {
-                foreach (object row in pair.Value)
+                if (relations.Any(a => a.Key.Key == model.GetType() && a.Key.Value == prop.PropertyType))
                 {
-                    object id = Insert(pair.Key, row, subTblIds);
-                    subTblIds.Add(pair.Key, id);
-                    ids.Add(id);
+
+                    object[] vals = relations.FirstOrDefault(a => a.Key.Key == model.GetType() && a.Key.Value == prop.PropertyType).Value.Value;
+
+                    if (vals.Length < 1)
+                        refs.Add(prop.PropertyType, vals[0]);
                 }
             }
 
 
-            return ids.Count > 0 ? ids.ToArray() : null;
+            object id = Insert(model.GetType(), model, refs);
+
+
+            for (int i = 0; i < relations.Count; i++)
+            {
+                var relation = relations.ElementAt(i);
+                if (relation.Key.Key == model.GetType())
+                {
+                    relations[relation.Key] = new KeyValuePair<object, object[]>(id, relation.Value.Value);
+                }
+            }
+
+            foreach (PropertyInfo prop in model.GetType().GetProperties())
+            {
+                if (!prop.PropertyType.IsCollection())
+                    continue;
+
+
+                KeyValuePair<KeyValuePair<Type, Type>, KeyValuePair<object, object[]>> relationalIds = relations.FirstOrDefault(a => a.Key.Key == model.GetType() && a.Key.Value == prop.PropertyType.GetTypeOfT());
+
+
+                if (relationalIds.Value.Value != null && relationalIds.Value.Value.Length > 1)
+                    foreach (object val in relationalIds.Value.Value)
+                        InsertRelationship((int)val, (int)relationalIds.Value.Key, relationalIds.Key.Key.Name + "_" + relationalIds.Key.Value.Name);
+            }
+
+
+            return result;
         }
 
         private object Insert(Type type, object model, Dictionary<Type, object> ids = null)
         {
+            if (ids.Values.Any(a => a.GetType().IsCollection()))
+                throw new Exception("ids.Values cannot be a collection...");
+
+
             if (model.GetType() != type)
                 throw new Exception("model Parameter is the wrong type...");
 
@@ -1242,7 +1310,7 @@ namespace NostreetsORM
             return id;
         }
 
-        private void InsertRelationship(int parentId, int childId)
+        private void InsertRelationship(int parentId, int childId, string tableName)
         {
 
         }
@@ -1252,7 +1320,7 @@ namespace NostreetsORM
             DataProvider.ExecuteNonQuery(() => Connection, "dbo." + GetTableName(_type) + "_Update",
                        param =>
                        {
-                           param.Add(new SqlParameter(_type.GetProperties()[0].Name, typeof(T).GetProperties()[0].GetValue(model)));
+                           param.Add(new SqlParameter(_type.GetProperties()[0].Name, _type.GetProperties()[0].GetValue(model)));
                            foreach (var prop in _type.GetProperties())
                            {
                                param.Add(new SqlParameter(prop.Name, prop.GetValue(model)));
@@ -1260,7 +1328,7 @@ namespace NostreetsORM
                        }
                        );
         }
-
+         
         #endregion
 
     }
