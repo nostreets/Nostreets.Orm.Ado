@@ -26,7 +26,7 @@ namespace NostreetsORM
 
 
                 bool doesExist = CheckIfTableExist(_type),
-                     isCurrent = !CheckIfTypeIsCurrent(_type) ? false : SubTablesAccessed.All(a => CheckIfTypeIsCurrent(a.Key)) ? true : false;
+                     isCurrent = CheckIfTypeIsCurrent(_type);
 
                 if (!doesExist)
                 {
@@ -54,7 +54,7 @@ namespace NostreetsORM
 
 
                 bool doesExist = CheckIfTableExist(_type),
-                     isCurrent = !CheckIfTypeIsCurrent(_type) ? false : SubTablesAccessed.All(a => CheckIfTypeIsCurrent(a.Key)) ? true : false;
+                     isCurrent = CheckIfTypeIsCurrent(_type);
 
                 if (!doesExist)
                 {
@@ -219,7 +219,7 @@ namespace NostreetsORM
         {
             Type[] result = null;
             List<Type> list = null;
-            List<PropertyInfo> relations = type.GetProperties().Where(a => ShouldNormalize(a.PropertyType)).ToList();
+            List<PropertyInfo> relations = type.GetProperties().Where(a => ShouldNormalize(a.PropertyType) || (a.PropertyType.IsCollection() && !a.PropertyType.GetTypeOfT().IsSystemType())).ToList();
 
             if (relations != null && relations.Count > 0)
             {
@@ -229,9 +229,6 @@ namespace NostreetsORM
 
                     if (list == null)
                         list = new List<Type>();
-
-                    //if (NeedsIdProp(propType))
-                    //    propType = propType.AddProperty(typeof(int), "Id");
 
                     list.Add(propType);
                 }
@@ -1060,41 +1057,57 @@ namespace NostreetsORM
 
         private bool CheckIfTypeIsCurrent(Type type)
         {
-            bool result = true;
+            if (!CheckIfTableExist(type))
+               return false;
 
-            if (!CheckIfTableExist(type)) { result = false; }
-            else if (!type.IsEnum)
+            else if (type.IsEnum)
+                return CheckIfEnumIsCurrent(type);
+
+            else
             {
-                List<PropertyInfo> baseProps = type.GetProperties().ToList();
                 List<string> columnsInTable = DataProvider.GetSchema(() => Connection, GetTableName(type));
+                List<PropertyInfo> baseProps = type.GetProperties().ToList();
 
 
                 List<PropertyInfo> excludedProps = baseProps.GetPropertiesByAttribute<NotMappedAttribute>(type);
                 excludedProps.AddRange(baseProps.Where(a => a.PropertyType.IsCollection()));
 
-                List<PropertyInfo> includedProps = (excludedProps.Count > 0) ? baseProps.Where(a => excludedProps.Any(b => b.Name != a.Name)).ToList() : baseProps;
-                List<PropertyInfo> matchingProps = includedProps.Where(a => columnsInTable.Any(b => b == ((ShouldNormalize(a.PropertyType)) ? a.Name + "Id" : a.Name))).ToList();
+                List<PropertyInfo> includedProps = (excludedProps.Count > 0) ? baseProps.Where(a => !excludedProps.Contains(a)).ToList() : baseProps;
+                //List<PropertyInfo> matchingProps = includedProps.Where(a => columnsInTable.Any(b => b == ((ShouldNormalize(a.PropertyType)) ? a.Name + "Id" : a.Name))).ToList();
 
 
-                if (matchingProps.Count != includedProps.Count)
-                    result = false;
+                if (columnsInTable.Count != includedProps.Count)
+                    return false;
 
 
                 if (includedProps.Any(a => ShouldNormalize(a.PropertyType)))
                 {
-                    PropertyInfo[] propsToCheck = includedProps.Where(a => ShouldNormalize(a.PropertyType)).ToArray();
+                    PropertyInfo[] propsToCheck = includedProps.Where(a => ShouldNormalize(a.PropertyType)).DistinctBy(a => a.PropertyType).ToArray();
                     foreach (PropertyInfo propToCheck in propsToCheck)
                         if (!CheckIfTypeIsCurrent(propToCheck.PropertyType))
-                            result = false;
+                            return false;
                 }
 
-            }
-            else
-            {
-                result = CheckIfEnumIsCurrent(type);
+
+                if (excludedProps.Any(a => a.PropertyType.IsCollection() && !a.PropertyType.GetTypeOfT().IsSystemType()))
+                {
+                    PropertyInfo[] propsToCheck = excludedProps.Where(a => a.PropertyType.IsCollection() && !a.PropertyType.GetTypeOfT().IsSystemType()).Distinct().ToArray();
+                    foreach (PropertyInfo propToCheck in propsToCheck)
+                    {
+                        Type listType = propToCheck.PropertyType.GetTypeOfT();
+
+                        if (!CheckIfTypeIsCurrent(listType))
+                            return false;
+
+                        else if(!CheckIfTableExist(propToCheck.PropertyType, type.Name + "_"))
+                            return false;
+
+                    }
+
+                }
             }
 
-            return result;
+            return true;
 
         }
 
@@ -1376,7 +1389,7 @@ namespace NostreetsORM
                 {
                     Type listType = prop.PropertyType.GetTypeOfT();
 
-                    List<object> collection = GetCollection((int)tableObj.GetPropertyValue(prop.Name + "Id"), tableObj.GetType().GetProperties()[0].PropertyType, listType);
+                    List<object> collection = GetCollection((int)tableObj.GetPropertyValue(prop.Name + "Id"), type, listType);
 
                     result.SetPropertyValue(prop.Name, collection);
                 }
@@ -1419,11 +1432,8 @@ namespace NostreetsORM
             }
 
 
-
+            List<object> tableObjs = null;
             Type tableType = ClassBuilder.CreateType(type.Name, propNames.ToArray(), propTypes.ToArray());
-            object tableObj = tableType.Instantiate();
-            List<object> tableObjs = new List<object>();
-
             string query = _partialProcs["SelectStatement"].FormatString("*")
                                 + _partialProcs["FromStatement"].FormatString(GetTableName(type))
                                 + _partialProcs["WhereStatement"].FormatString(GetPKOfTable(type)
@@ -1433,39 +1443,46 @@ namespace NostreetsORM
             DataProvider.ExecuteCmd(() => Connection, query, null,
                 (reader, set) =>
                 {
+                    object tableObj = tableType.Instantiate();
                     tableObj = DataMapper.MapToObject(reader, tableType);
+
+                    if (tableObjs == null)
+                        tableObjs = new List<object>();
+
                     tableObjs.Add(tableObj);
 
                 }, null, cmd => cmd.CommandType = CommandType.Text);
 
 
 
-            foreach (object item in tableObjs)
+            foreach (object obj in tableObjs)
             {
                 object entity = type.Instantiate();
 
+                if (entities == null)
+                    entities = new List<object>();
+
                 foreach (PropertyInfo prop in type.GetProperties())
                 {
-                    if (entities == null)
-                        entities = new List<object>();
+
 
                     if (ShouldNormalize(prop.PropertyType) && !prop.PropertyType.IsEnum)
                     {
-                        object property = Get(tableObj.GetPropertyValue(prop.Name + "Id"));
+                        object property = Get(obj.GetPropertyValue(prop.Name + "Id"));
                         entity.SetPropertyValue(prop.Name, property);
                     }
                     else if (prop.PropertyType.IsCollection() && !prop.PropertyType.GetTypeOfT().IsSystemType())
                     {
                         Type listType = prop.PropertyType.GetTypeOfT();
 
-                        List<object> collection = GetCollection((int)tableObj.GetPropertyValue(prop.Name + "Id"), tableObj.GetType().GetProperties()[0].PropertyType, listType);
+                        List<object> collection = GetCollection((int)obj.GetPropertyValue(prop.Name + "Id"), type, listType);
 
                         entity.SetPropertyValue(prop.Name, collection);
 
                     }
                     else
                     {
-                        object property = tableObj.GetPropertyValue(prop.Name);
+                        object property = obj.GetPropertyValue(prop.Name);
                         entity.SetPropertyValue(prop.Name, property);
                     }
                 }
@@ -1478,23 +1495,98 @@ namespace NostreetsORM
             return entities;
         }
 
+        private List<object> GetAll(Type type)
+        {
+            List<object> entities = null;
+            List<string> propNames = new List<string>();
+            List<Type> propTypes = new List<Type>();
+
+
+            foreach (PropertyInfo prop in type.GetProperties())
+            {
+                string newName = null;
+                Type newType = null;
+
+                if (ShouldNormalize(prop.PropertyType))
+                {
+                    newName = prop.Name + "Id";
+                    newType = typeof(int);
+                }
+                else if (!prop.PropertyType.IsCollection())
+                {
+                    newName = prop.Name;
+                    newType = prop.PropertyType;
+                }
+
+                propNames.Add(newName);
+                propTypes.Add(newType);
+            }
+
+
+            Type tableType = ClassBuilder.CreateType(type.Name, propNames.ToArray(), propTypes.ToArray());
+            List<object> tableObjs = null;
+
+
+            DataProvider.ExecuteCmd(() => Connection, "dbo." + GetTableName(_type) + "_SelectAll",
+                null,
+                (reader, set) =>
+                {
+                    object tableObj = tableType.Instantiate();
+                    tableObj = DataMapper.MapToObject(reader, tableType);
+
+
+                    if (tableObjs == null)
+                        tableObjs = new List<object>();
+
+                    tableObjs.Add(tableObj);
+                });
+
+
+
+
+            foreach (object tbl in tableObjs)
+            {
+                object entity = type.Instantiate();
+
+                if (entities == null)
+                    entities = new List<object>();
+
+                foreach (PropertyInfo prop in type.GetProperties())
+                {
+                    if (ShouldNormalize(prop.PropertyType) && !prop.PropertyType.IsEnum)
+                    {
+                        object property = Get(tbl.GetPropertyValue(prop.Name + "Id"));
+                        entity.SetPropertyValue(prop.Name, property);
+                    }
+                    else if (prop.PropertyType.IsCollection() && !prop.PropertyType.GetTypeOfT().IsSystemType())
+                    {
+                        Type listType = prop.PropertyType.GetTypeOfT();
+
+                        List<object> collection = GetCollection((int)tbl.GetPropertyValue(prop.Name + "Id"), type, listType);
+
+                        entity.SetPropertyValue(prop.Name, collection);
+                    }
+                    else
+                    {
+                        object property = tbl.GetPropertyValue(prop.Name);
+                        entity.SetPropertyValue(prop.Name, property);
+                    }
+                }
+
+                entities.Add(entity);
+            }
+
+
+            return entities;
+        }
+
         #endregion
 
         #region Public Acess Methods
 
         public List<object> GetAll()
         {
-            List<object> list = null;
-
-            DataProvider.ExecuteCmd(() => Connection, "dbo." + GetTableName(_type) + "_SelectAll",
-                null,
-                (reader, set) =>
-                {
-                    object item = DataMapper.MapToObject(reader, _type);
-                    if (list == null) { list = new List<object>(); }
-                    list.Add(item);
-                });
-            return list;
+            return GetAll(_type);
         }
 
         public void Delete(object id)
