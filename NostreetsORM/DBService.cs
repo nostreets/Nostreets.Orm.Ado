@@ -1550,7 +1550,7 @@ namespace NostreetsORM
             object tableObj = tableType.Instantiate();
 
             DataProvider.ExecuteCmd(() => Connection, "dbo." + GetTableName(type) + "_SelectById",
-                param => param.Add(new SqlParameter(type.GetProperties()[0].Name, id)),
+                param => param.Add(new SqlParameter((!type.IsEnum) ? type.GetProperties()[0].Name : "Id", id)),
                 (reader, set) =>
                 {
                     tableObj = DataMapper.MapToObject(reader, tableType);
