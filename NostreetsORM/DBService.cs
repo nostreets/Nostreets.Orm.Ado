@@ -90,7 +90,6 @@ namespace NostreetsORM
             }
         }
 
-
         public DBService(Type type, bool nullLock) : base()
         {
             try
@@ -278,6 +277,31 @@ namespace NostreetsORM
             return (prefix != null) ? prefix + result : result;
         }
 
+        private object GetNormalizedSchema(Type type)
+        {
+            object result = type.Instantiate();
+
+            PropertyInfo[] baseProps = type.GetProperties();
+            List<string> propNames = new List<string>();
+            List<Type> propTypes = new List<Type>();
+
+            foreach (PropertyInfo prop in baseProps)
+            {
+                if (ShouldNormalize(prop.PropertyType))
+                {
+                    propNames.Add(prop.Name + "Id");
+                    propTypes.Add(typeof(int));
+                }
+                else if (!prop.PropertyType.IsCollection())
+                {
+                    propNames.Add(prop.Name);
+                    propTypes.Add(prop.PropertyType);
+                }
+            }
+
+            return ClassBuilder.CreateObject(type.Name, propNames.ToArray(), propTypes.ToArray());
+        }
+
         private string DeterminSQLType(Type type)
         {
             string statement = null;
@@ -428,16 +452,17 @@ namespace NostreetsORM
                 throw new Exception("prefix cannot be null...");
 
             Type collType = type.GetTypeOfT();
-            string query = null,
+            string skimmedPrefix = prefix.Remove(prefix.Length - 1),
+                   query = null,
                    inputParams = null,
                    columns = null,
                    values = null,
                    select = null;
 
-            inputParams = "@{2}Id {1}, @{0}Id {1}".FormatString(collType.Name, DeterminSQLType(typeof(int)), prefix.Remove(prefix.Length - 1));
-            columns = "[{1}Id], [{0}Id] ".FormatString(collType.Name, prefix.Remove(prefix.Length - 1));
-            values = "@{1}Id, @{0}Id ".FormatString(collType.Name, prefix.Remove(prefix.Length - 1));
-            select = "{0}.[{2}Id], {0}.[{1}Id]".FormatString(GetTableName(type, prefix), collType.Name, prefix.Remove(prefix.Length - 1));
+            inputParams = "@{2}Id {1}, @{0}Id {1}".FormatString(collType.Name, DeterminSQLType(typeof(int)), skimmedPrefix);
+            columns = "[{1}Id], [{0}Id] ".FormatString(collType.Name, skimmedPrefix);
+            values = "@{1}Id, @{0}Id ".FormatString(collType.Name, skimmedPrefix);
+            select = "{0}.[{2}Id], {0}.[{1}Id]".FormatString(GetTableName(type, prefix), collType.Name, skimmedPrefix);
 
             switch (template.Key)
             {
@@ -1024,7 +1049,7 @@ namespace NostreetsORM
 
                 if (type.IsCollection())
                 {
-                    if (template.Key == "Delete" || template.Key == "Insert" || template.Key == "Update" || template.Key == "SelectBy")
+                    if (template.Key == "Insert" || template.Key == "Update" || template.Key == "SelectBy")
                         continue;
 
                     query = GetProcsForCollection(type, prefix, template);
@@ -1454,7 +1479,7 @@ namespace NostreetsORM
                                    else
                                        value = DBNull.Value;
 
-                                   param.Add(new SqlParameter( prop.Name, value));
+                                   param.Add(new SqlParameter(prop.Name, value));
                                }
                            }
                        },
@@ -1490,29 +1515,124 @@ namespace NostreetsORM
             }
         }
 
+        private List<object> GetMultiple(Type type, object[] ids)
+        {
+            List<object> entities = null;
+            List<object> tableObjs = null;
+            Type tableType = GetNormalizedSchema(type).GetType();
+            string query = _partialProcs["SelectStatement"].FormatString("*")
+                                + _partialProcs["FromStatement"].FormatString(GetTableName(type))
+                                + _partialProcs["WhereStatement"].FormatString(GetPKOfTable(type)
+                                + " IN (" + String.Join(", ", ids) + ") ");
+
+
+            DataProvider.ExecuteCmd(() => Connection, query, null,
+                (reader, set) =>
+                {
+                    object tableObj = tableType.Instantiate();
+                    tableObj = DataMapper.MapToObject(reader, tableType);
+
+                    if (tableObjs == null)
+                        tableObjs = new List<object>();
+
+                    tableObjs.Add(tableObj);
+
+                }, null, cmd => cmd.CommandType = CommandType.Text);
+
+
+
+            foreach (object obj in tableObjs)
+            {
+                object entity = type.Instantiate();
+
+                if (entities == null)
+                    entities = new List<object>();
+
+                foreach (PropertyInfo prop in type.GetProperties())
+                {
+                    if (prop.PropertyType.IsCollection() && prop.PropertyType.GetTypeOfT().IsSystemType())
+                        continue;
+
+                    else if (ShouldNormalize(prop.PropertyType) && !prop.PropertyType.IsEnum)
+                    {
+                        object property = Get(prop.PropertyType, obj.GetPropertyValue(prop.Name + "Id"));
+                        entity.SetPropertyValue(prop.Name, property);
+                    }
+                    else if (prop.PropertyType.IsCollection())
+                    {
+                        Type listType = prop.PropertyType.GetTypeOfT();
+
+                        List<object> collection = GetCollection((int)obj.GetPropertyValue(prop.Name + "Id"), type, listType);
+
+                        entity.SetPropertyValue(prop.Name, collection);
+
+                    }
+                    else
+                    {
+                        object property = obj.GetPropertyValue(prop.Name);
+                        entity.SetPropertyValue(prop.Name, property);
+                    }
+                }
+
+                entities.Add(entity);
+            }
+
+
+
+            return entities;
+        }
+
+        private void DeleteMultiple(Type type, object[] ids)
+        {
+            object tableObj = GetNormalizedSchema(type);
+            Type tableType = tableObj.GetType();
+
+            string query = _partialProcs["SelectStatement"].FormatString("*")
+                                + _partialProcs["FromStatement"].FormatString(GetTableName(type))
+                                + _partialProcs["WhereStatement"].FormatString(GetPKOfTable(type)
+                                + " IN (" + String.Join(", ", ids) + ") ");
+
+
+
+
+
+            DataProvider.ExecuteNonQuery(() => Connection, "dbo." + GetTableName(type) + "_Delete",
+               param => param.Add(new SqlParameter(type.GetProperties()[0].Name, type.GetProperties()[0].GetValue(id))));
+
+
+            foreach (PropertyInfo prop in type.GetProperties())
+            {
+                if (prop.PropertyType.IsCollection() && prop.PropertyType.GetTypeOfT().IsSystemType())
+                    continue;
+
+                else if (prop.PropertyType.IsCollection())
+                    DeleteCollection((int)tableObj.GetPropertyValue((NeedsIdProp(prop.PropertyType)) ? "Id" : type.GetProperties()[0].Name), type, prop.PropertyType.GetTypeOfT());
+
+                else if (prop.PropertyType.IsClass && !prop.PropertyType.IsEnum)
+                    Delete(prop.PropertyType, tableObj.GetPropertyValue(prop.Name + "Id"));
+            }
+
+        }
+
         private List<object> GetCollection(int parentId, Type parentType, Type childType)
         {
             List<object> result = null;
 
-            if (CheckIfTableExist(childType, parentType.Name + "_"))
-            {
-                List<int> ids = new List<int>();
-                string query = _partialProcs["SelectStatement"].FormatString(childType.Name + "Id")
-                                 + _partialProcs["FromStatement"].FormatString(parentType.Name + "_" + childType.Name)
-                                 + _partialProcs["WhereStatement"].FormatString(parentType.Name + "Id = " + parentId);
+            List<int> ids = new List<int>();
+            string query = _partialProcs["SelectStatement"].FormatString(childType.Name + "Id")
+                             + _partialProcs["FromStatement"].FormatString(parentType.Name + "_" + childType.Name)
+                             + _partialProcs["WhereStatement"].FormatString(parentType.Name + "Id = " + parentId);
+
+            DataProvider.ExecuteCmd(() => Connection, query,
+                null,
+                (reader, set) =>
+                {
+                    int id = reader.GetSafeInt32(0);
+                    ids.Add(id);
+                }, null, cmd => cmd.CommandType = CommandType.Text);
 
 
-                DataProvider.ExecuteCmd(() => Connection, query,
-                    null,
-                    (reader, set) =>
-                    {
-                        int id = reader.GetSafeInt32(0);
-                        ids.Add(id);
-                    }, null, cmd => cmd.CommandType = CommandType.Text);
-
-
-                result = GetMultiple(childType, ids.Cast<object>().ToArray());
-            }
+            result = GetMultiple(childType, ids.Cast<object>().ToArray());
 
             return result;
         }
@@ -1555,12 +1675,15 @@ namespace NostreetsORM
 
             foreach (PropertyInfo prop in type.GetProperties())
             {
-                if (ShouldNormalize(prop.PropertyType) && !prop.PropertyType.IsEnum)
+                if (prop.PropertyType.IsCollection() && prop.PropertyType.GetTypeOfT().IsSystemType())
+                    continue;
+
+                else if (ShouldNormalize(prop.PropertyType) && !prop.PropertyType.IsEnum)
                 {
                     object property = Get(prop.PropertyType, tableObj.GetPropertyValue(prop.Name + "Id"));
                     result.SetPropertyValue(prop.Name, property);
                 }
-                else if (prop.PropertyType.IsCollection() && !prop.PropertyType.GetTypeOfT().IsSystemType())
+                else if (prop.PropertyType.IsCollection())
                 {
                     Type listType = prop.PropertyType.GetTypeOfT();
                     List<object> collection = GetCollection((int)tableObj.GetPropertyValue(prop.Name + "Id"), type, listType);
@@ -1577,114 +1700,12 @@ namespace NostreetsORM
             return result;
         }
 
-        private List<object> GetMultiple(Type type, object[] ids)
-        {
-            List<object> entities = null;
-            List<string> propNames = new List<string>();
-            List<Type> propTypes = new List<Type>();
-
-            foreach (PropertyInfo prop in type.GetProperties())
-            {
-                if (ShouldNormalize(prop.PropertyType))
-                {
-                    propNames.Add(prop.Name + "Id");
-                    propTypes.Add(typeof(int));
-                }
-                else if (!prop.PropertyType.IsCollection())
-                {
-                    propNames.Add(prop.Name);
-                    propTypes.Add(prop.PropertyType);
-                }
-            }
-
-
-            List<object> tableObjs = null;
-            Type tableType = ClassBuilder.CreateType(type.Name, propNames.ToArray(), propTypes.ToArray());
-            string query = _partialProcs["SelectStatement"].FormatString("*")
-                                + _partialProcs["FromStatement"].FormatString(GetTableName(type))
-                                + _partialProcs["WhereStatement"].FormatString(GetPKOfTable(type)
-                                + " IN (" + String.Join(", ", ids) + ") ");
-
-
-            DataProvider.ExecuteCmd(() => Connection, query, null,
-                (reader, set) =>
-                {
-                    object tableObj = tableType.Instantiate();
-                    tableObj = DataMapper.MapToObject(reader, tableType);
-
-                    if (tableObjs == null)
-                        tableObjs = new List<object>();
-
-                    tableObjs.Add(tableObj);
-
-                }, null, cmd => cmd.CommandType = CommandType.Text);
-
-
-
-            foreach (object obj in tableObjs)
-            {
-                object entity = type.Instantiate();
-
-                if (entities == null)
-                    entities = new List<object>();
-
-                foreach (PropertyInfo prop in type.GetProperties())
-                {
-
-
-                    if (ShouldNormalize(prop.PropertyType) && !prop.PropertyType.IsEnum)
-                    {
-                        object property = Get(prop.PropertyType, obj.GetPropertyValue(prop.Name + "Id"));
-                        entity.SetPropertyValue(prop.Name, property);
-                    }
-                    else if (prop.PropertyType.IsCollection() && !prop.PropertyType.GetTypeOfT().IsSystemType())
-                    {
-                        Type listType = prop.PropertyType.GetTypeOfT();
-
-                        List<object> collection = GetCollection((int)obj.GetPropertyValue(prop.Name + "Id"), type, listType);
-
-                        entity.SetPropertyValue(prop.Name, collection);
-
-                    }
-                    else
-                    {
-                        object property = obj.GetPropertyValue(prop.Name);
-                        entity.SetPropertyValue(prop.Name, property);
-                    }
-                }
-
-                entities.Add(entity);
-            }
-
-
-
-            return entities;
-        }
-
         private List<object> GetAll(Type type)
         {
             List<object> entities = null;
-            List<string> propNames = new List<string>();
-            List<Type> propTypes = new List<Type>();
+            Type tableType = GetNormalizedSchema(type).GetType();
+            Dictionary<Type, object[]> tableObjs = null;
 
-
-            foreach (PropertyInfo prop in type.GetProperties())
-            {
-                if (ShouldNormalize(prop.PropertyType))
-                {
-                    propNames.Add(prop.Name + "Id");
-                    propTypes.Add(typeof(int));
-                }
-                else if (!prop.PropertyType.IsCollection())
-                {
-                    propNames.Add(prop.Name);
-                    propTypes.Add(prop.PropertyType);
-                }
-            }
-
-
-            Type tableType = ClassBuilder.CreateType(type.Name, propNames.ToArray(), propTypes.ToArray());
-            List<object> tableObjs = null;
 
 
             DataProvider.ExecuteCmd(() => Connection, "dbo." + GetTableName(_type) + "_SelectAll",
@@ -1696,9 +1717,7 @@ namespace NostreetsORM
 
 
                     if (tableObjs == null)
-                        tableObjs = new List<object>();
-
-                    tableObjs.Add(tableObj);
+                        tableObjs = new Dictionary<Type, object[]>();
                 });
 
 
@@ -1742,6 +1761,83 @@ namespace NostreetsORM
             return entities;
         }
 
+        private void Delete(Type type, object id)
+        {
+            object result = type.Instantiate();
+
+            PropertyInfo[] baseProps = type.GetProperties();
+            List<string> propNames = new List<string>();
+            List<Type> propTypes = new List<Type>();
+
+            foreach (PropertyInfo prop in baseProps)
+            {
+                if (ShouldNormalize(prop.PropertyType))
+                {
+                    propNames.Add(prop.Name + "Id");
+                    propTypes.Add(typeof(int));
+                }
+                else if (!prop.PropertyType.IsCollection())
+                {
+                    propNames.Add(prop.Name);
+                    propTypes.Add(prop.PropertyType);
+                }
+            }
+
+
+            Type tableType = ClassBuilder.CreateType(type.Name, propNames.ToArray(), propTypes.ToArray());
+            object tableObj = tableType.Instantiate();
+
+
+            DataProvider.ExecuteCmd(() => Connection, "dbo." + GetTableName(type) + "_SelectById",
+                param => param.Add(new SqlParameter((!type.IsEnum && !NeedsIdProp(type)) ? type.GetProperties()[0].Name : "Id", id)),
+                (reader, set) =>
+                {
+                    tableObj = DataMapper.MapToObject(reader, tableType);
+                });
+
+
+            DataProvider.ExecuteNonQuery(() => Connection, "dbo." + GetTableName(type) + "_Delete",
+               param => param.Add(new SqlParameter(type.GetProperties()[0].Name, type.GetProperties()[0].GetValue(id))));
+
+
+            foreach (PropertyInfo prop in baseProps)
+            {
+                if (prop.PropertyType.IsCollection() && prop.PropertyType.GetTypeOfT().IsSystemType())
+                    continue;
+                else if (prop.PropertyType.IsCollection())
+                    DeleteCollection((int)tableObj.GetPropertyValue((NeedsIdProp(prop.PropertyType)) ? "Id" : baseProps[0].Name), type, prop.PropertyType.GetTypeOfT());
+
+                else if (prop.PropertyType.IsClass && !prop.PropertyType.IsEnum)
+                    Delete(prop.PropertyType, tableObj.GetPropertyValue(prop.Name + "Id"));
+            }
+
+
+        }
+
+        private void DeleteCollection(int parentId, Type parentType, Type childType)
+        {
+            object result = null;
+            List<object> objIds = GetCollection(parentId, parentType, childType);
+            string query = _partialProcs["DeleteRowsStatement"].FormatString(parentType.Name + "_" + childType.Name)
+                         + _partialProcs["WhereStatement"].FormatString(parentType.Name + "Id = " + parentId);
+
+
+
+            DataProvider.ExecuteCmd(() => Connection, query,
+                       null,
+                       (reader, set) =>
+                       {
+                           result = reader.GetSafeInt32(0);
+                       }, null, cmd => cmd.CommandType = CommandType.Text);
+
+            DeleteMultiple(childType, objIds.ToArray());
+
+            //foreach (object id in objIds)
+            //    Delete(childType, id);
+
+        }
+
+
         #endregion
 
         #region Public Acess Methods
@@ -1753,9 +1849,7 @@ namespace NostreetsORM
 
         public void Delete(object id)
         {
-
-            DataProvider.ExecuteNonQuery(() => Connection, "dbo." + GetTableName(_type) + "_Delete",
-                param => param.Add(new SqlParameter(_type.GetProperties()[0].Name, _type.GetProperties()[0].GetValue(id))));
+            Delete(_type, id);
         }
 
         public object Get(object id)
@@ -1841,6 +1935,9 @@ namespace NostreetsORM
 
                 if (listType != typeof(T))
                     throw new Exception("objects in list are not the right Type of entity to access..");
+
+                if (result == null)
+                    result = new List<T>();
 
                 foreach (object item in list)
                     result.Add((T)item);
