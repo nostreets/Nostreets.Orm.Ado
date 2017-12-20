@@ -1444,7 +1444,7 @@ namespace NostreetsORM
                                        throw new Exception("Any property in model that is an Enum cannot be null");
 
                                else if (ShouldNormalize(prop.PropertyType) && ids.Keys.Any(a => a == prop.PropertyType))
-                                   param.Add(new SqlParameter( prop.Name, ids[prop.PropertyType]));
+                                   param.Add(new SqlParameter(prop.Name, ids[prop.PropertyType]));
 
                                else
                                {
@@ -1526,22 +1526,16 @@ namespace NostreetsORM
 
             foreach (PropertyInfo prop in type.GetProperties())
             {
-                string newName = null;
-                Type newType = null;
-
                 if (ShouldNormalize(prop.PropertyType))
                 {
-                    newName = prop.Name + "Id";
-                    newType = typeof(int);
+                    propNames.Add(prop.Name + "Id");
+                    propTypes.Add(typeof(int));
                 }
                 else if (!prop.PropertyType.IsCollection())
                 {
-                    newName = prop.Name;
-                    newType = prop.PropertyType;
+                    propNames.Add(prop.Name);
+                    propTypes.Add(prop.PropertyType);
                 }
-
-                propNames.Add(newName);
-                propTypes.Add(newType);
             }
 
 
@@ -1550,7 +1544,7 @@ namespace NostreetsORM
             object tableObj = tableType.Instantiate();
 
             DataProvider.ExecuteCmd(() => Connection, "dbo." + GetTableName(type) + "_SelectById",
-                param => param.Add(new SqlParameter((!type.IsEnum) ? type.GetProperties()[0].Name : "Id", id)),
+                param => param.Add(new SqlParameter((!type.IsEnum && !NeedsIdProp(type)) ? type.GetProperties()[0].Name : "Id", id)),
                 (reader, set) =>
                 {
                     tableObj = DataMapper.MapToObject(reader, tableType);
@@ -1563,15 +1557,13 @@ namespace NostreetsORM
             {
                 if (ShouldNormalize(prop.PropertyType) && !prop.PropertyType.IsEnum)
                 {
-                    object property = Get(tableObj.GetPropertyValue(prop.Name + "Id"));
+                    object property = Get(prop.PropertyType, tableObj.GetPropertyValue(prop.Name + "Id"));
                     result.SetPropertyValue(prop.Name, property);
                 }
                 else if (prop.PropertyType.IsCollection() && !prop.PropertyType.GetTypeOfT().IsSystemType())
                 {
                     Type listType = prop.PropertyType.GetTypeOfT();
-
                     List<object> collection = GetCollection((int)tableObj.GetPropertyValue(prop.Name + "Id"), type, listType);
-
                     result.SetPropertyValue(prop.Name, collection);
                 }
                 else
@@ -1593,23 +1585,16 @@ namespace NostreetsORM
 
             foreach (PropertyInfo prop in type.GetProperties())
             {
-                string newName = null;
-                Type newType = null;
-
                 if (ShouldNormalize(prop.PropertyType))
                 {
-                    newName = prop.Name + "Id";
-                    newType = typeof(int);
+                    propNames.Add(prop.Name + "Id");
+                    propTypes.Add(typeof(int));
                 }
                 else if (!prop.PropertyType.IsCollection())
                 {
-                    newName = prop.Name;
-                    newType = prop.PropertyType;
+                    propNames.Add(prop.Name);
+                    propTypes.Add(prop.PropertyType);
                 }
-
-
-                propNames.Add(newName);
-                propTypes.Add(newType);
             }
 
 
@@ -1649,7 +1634,7 @@ namespace NostreetsORM
 
                     if (ShouldNormalize(prop.PropertyType) && !prop.PropertyType.IsEnum)
                     {
-                        object property = Get(obj.GetPropertyValue(prop.Name + "Id"));
+                        object property = Get(prop.PropertyType, obj.GetPropertyValue(prop.Name + "Id"));
                         entity.SetPropertyValue(prop.Name, property);
                     }
                     else if (prop.PropertyType.IsCollection() && !prop.PropertyType.GetTypeOfT().IsSystemType())
@@ -1685,22 +1670,16 @@ namespace NostreetsORM
 
             foreach (PropertyInfo prop in type.GetProperties())
             {
-                string newName = null;
-                Type newType = null;
-
                 if (ShouldNormalize(prop.PropertyType))
                 {
-                    newName = prop.Name + "Id";
-                    newType = typeof(int);
+                    propNames.Add(prop.Name + "Id");
+                    propTypes.Add(typeof(int));
                 }
                 else if (!prop.PropertyType.IsCollection())
                 {
-                    newName = prop.Name;
-                    newType = prop.PropertyType;
+                    propNames.Add(prop.Name);
+                    propTypes.Add(prop.PropertyType);
                 }
-
-                propNames.Add(newName);
-                propTypes.Add(newType);
             }
 
 
@@ -1736,7 +1715,7 @@ namespace NostreetsORM
 
                     foreach (PropertyInfo prop in type.GetProperties())
                     {
-                        if (ShouldNormalize(prop.PropertyType))
+                        if (ShouldNormalize(prop.PropertyType) && !prop.PropertyType.IsEnum)
                         {
                             object property = Get(prop.PropertyType, tbl.GetPropertyValue(prop.Name + "Id"));
                             entity.SetPropertyValue(prop.Name, property);
@@ -1751,7 +1730,7 @@ namespace NostreetsORM
                         }
                         else
                         {
-                            object property = tbl.GetPropertyValue(prop.Name);
+                            object property = tbl.GetPropertyValue((!prop.PropertyType.IsEnum) ? prop.Name : prop.Name + "Id");
                             entity.SetPropertyValue(prop.Name, property);
                         }
                     }
