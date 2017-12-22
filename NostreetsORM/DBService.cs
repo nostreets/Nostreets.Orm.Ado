@@ -637,7 +637,7 @@ namespace NostreetsORM
                         + props[i].Name + "Id"
                     );
 
-                    
+
 
                     //dels.Add(
                     //    "Delete " + props[i].Name
@@ -1539,63 +1539,67 @@ namespace NostreetsORM
         private List<object> GetMultiple(Type type, object[] ids)
         {
             List<object> entities = null;
-            List<object> tableObjs = null;
-            Type tableType = GetNormalizedSchema(type).GetType();
-            string query = _partialProcs["SelectStatement"].FormatString("*")
-                                + _partialProcs["FromStatement"].FormatString(GetTableName(type))
-                                + _partialProcs["WhereStatement"].FormatString(GetPKOfTable(type)
-                                + " IN (" + String.Join(", ", ids) + ") ");
 
-
-            DataProvider.ExecuteCmd(() => Connection, query, null,
-                (reader, set) =>
-                {
-                    object tableObj = tableType.Instantiate();
-                    tableObj = DataMapper.MapToObject(reader, tableType);
-
-                    if (tableObjs == null)
-                        tableObjs = new List<object>();
-
-                    tableObjs.Add(tableObj);
-
-                }, null, cmd => cmd.CommandType = CommandType.Text);
-
-
-
-            foreach (object obj in tableObjs)
+            if (ids != null && ids.Length > 0)
             {
-                object entity = type.Instantiate();
+                List<object> tableObjs = null;
+                Type tableType = GetNormalizedSchema(type).GetType();
+                string query = _partialProcs["SelectStatement"].FormatString("*")
+                                    + _partialProcs["FromStatement"].FormatString(GetTableName(type))
+                                    + _partialProcs["WhereStatement"].FormatString(GetPKOfTable(type)
+                                    + " IN (" + String.Join(", ", ids) + ") ");
 
-                if (entities == null)
-                    entities = new List<object>();
 
-                foreach (PropertyInfo prop in type.GetProperties())
+                DataProvider.ExecuteCmd(() => Connection, query, null,
+                    (reader, set) =>
+                    {
+                        object tableObj = tableType.Instantiate();
+                        tableObj = DataMapper.MapToObject(reader, tableType);
+
+                        if (tableObjs == null)
+                            tableObjs = new List<object>();
+
+                        tableObjs.Add(tableObj);
+
+                    }, null, cmd => cmd.CommandType = CommandType.Text);
+
+
+
+                foreach (object obj in tableObjs)
                 {
-                    if (prop.PropertyType.IsCollection() && prop.PropertyType.GetTypeOfT().IsSystemType())
-                        continue;
+                    object entity = type.Instantiate();
 
-                    else if (ShouldNormalize(prop.PropertyType) && !prop.PropertyType.IsEnum)
+                    if (entities == null)
+                        entities = new List<object>();
+
+                    foreach (PropertyInfo prop in type.GetProperties())
                     {
-                        object property = Get(prop.PropertyType, obj.GetPropertyValue(prop.Name + "Id"));
-                        entity.SetPropertyValue(prop.Name, property);
-                    }
-                    else if (prop.PropertyType.IsCollection())
-                    {
-                        Type listType = prop.PropertyType.GetTypeOfT();
+                        if (prop.PropertyType.IsCollection() && prop.PropertyType.GetTypeOfT().IsSystemType())
+                            continue;
 
-                        List<object> collection = GetCollection((int)obj.GetPropertyValue(prop.Name + "Id"), type, listType);
+                        else if (ShouldNormalize(prop.PropertyType) && !prop.PropertyType.IsEnum)
+                        {
+                            object property = Get(prop.PropertyType, obj.GetPropertyValue(prop.Name + "Id"));
+                            entity.SetPropertyValue(prop.Name, property);
+                        }
+                        else if (prop.PropertyType.IsCollection())
+                        {
+                            Type listType = prop.PropertyType.GetTypeOfT();
 
-                        entity.SetPropertyValue(prop.Name, collection);
+                            List<object> collection = GetCollection((int)obj.GetPropertyValue(prop.Name + "Id"), type, listType);
 
+                            entity.SetPropertyValue(prop.Name, collection);
+
+                        }
+                        else
+                        {
+                            object property = obj.GetPropertyValue(prop.Name);
+                            entity.SetPropertyValue(prop.Name, property);
+                        }
                     }
-                    else
-                    {
-                        object property = obj.GetPropertyValue(prop.Name);
-                        entity.SetPropertyValue(prop.Name, property);
-                    }
+
+                    entities.Add(entity);
                 }
-
-                entities.Add(entity);
             }
 
 
@@ -1605,57 +1609,59 @@ namespace NostreetsORM
 
         private void DeleteMultiple(Type type, object[] ids)
         {
-            object result = null;
-            List<object> tableObjs = null;
-            Type tableType = GetNormalizedSchema(type).GetType();
-
-
-            string query = _partialProcs["SelectStatement"].FormatString("*")
-                            + _partialProcs["FromStatement"].FormatString(GetTableName(type))
-                            + _partialProcs["WhereStatement"].FormatString(GetPKOfTable(type)
-                            + " IN (" + String.Join(", ", ids) + ") ");
-            DataProvider.ExecuteCmd(() => Connection, query, null,
-                (reader, set) =>
-                {
-                    object tableObj = tableType.Instantiate();
-                    tableObj = DataMapper.MapToObject(reader, tableType);
-
-                    if (tableObjs == null)
-                        tableObjs = new List<object>();
-
-                    tableObjs.Add(tableObj);
-
-                }, null, cmd => cmd.CommandType = CommandType.Text);
-
-
-
-
-
-            query = _partialProcs["DeleteRowsStatement"].FormatString(GetTableName(type))
-                    + _partialProcs["WhereStatement"].FormatString(GetPKOfTable(type)
-                    + " IN (" + String.Join(", ", ids) + ") ");
-            DataProvider.ExecuteCmd(() => Connection, query,
-                       null,
-                       (reader, set) =>
-                       {
-                           result = reader.GetSafeInt32(0);
-                       }, null, cmd => cmd.CommandType = CommandType.Text);
-
-
-
-            foreach (object item in tableObjs)
+            if (ids != null && ids.Length > 0)
             {
-                foreach (PropertyInfo prop in type.GetProperties())
+                List<object> tableObjs = null;
+                Type tableType = GetNormalizedSchema(type).GetType();
+
+
+                string query = _partialProcs["SelectStatement"].FormatString("*")
+                                + _partialProcs["FromStatement"].FormatString(GetTableName(type))
+                                + _partialProcs["WhereStatement"].FormatString(GetPKOfTable(type)
+                                + " IN (" + String.Join(", ", ids) + ") ");
+                DataProvider.ExecuteCmd(() => Connection, query, null,
+                    (reader, set) =>
+                    {
+                        object tableObj = tableType.Instantiate();
+                        tableObj = DataMapper.MapToObject(reader, tableType);
+
+                        if (tableObjs == null)
+                            tableObjs = new List<object>();
+
+                        tableObjs.Add(tableObj);
+
+                    }, null, cmd => cmd.CommandType = CommandType.Text);
+
+
+
+
+
+                query = _partialProcs["DeleteRowsStatement"].FormatString(GetTableName(type))
+                        + _partialProcs["WhereStatement"].FormatString(GetPKOfTable(type)
+                        + " IN (" + String.Join(", ", ids) + ") ");
+                DataProvider.ExecuteCmd(() => Connection, query,
+                           null,
+                           (reader, set) =>
+                           {
+                               object result = reader.GetSafeInt32(0);
+                           }, null, cmd => cmd.CommandType = CommandType.Text);
+
+
+
+                foreach (object item in tableObjs)
                 {
-                    if (prop.PropertyType.IsCollection() && prop.PropertyType.GetTypeOfT().IsSystemType())
-                        continue;
+                    foreach (PropertyInfo prop in type.GetProperties())
+                    {
+                        if (prop.PropertyType.IsCollection() && prop.PropertyType.GetTypeOfT().IsSystemType())
+                            continue;
 
-                    else if (prop.PropertyType.IsCollection())
-                        DeleteCollection((int)item.GetPropertyValue((NeedsIdProp(prop.PropertyType)) ? "Id" : type.GetProperties()[0].Name), type, prop.PropertyType.GetTypeOfT());
+                        else if (prop.PropertyType.IsCollection())
+                            DeleteCollection((int)item.GetPropertyValue((NeedsIdProp(prop.PropertyType)) ? "Id" : type.GetProperties()[0].Name), type, prop.PropertyType.GetTypeOfT());
 
-                    else if (prop.PropertyType.IsClass && !prop.PropertyType.IsEnum)
-                        Delete(prop.PropertyType, item.GetPropertyValue(prop.Name + "Id"));
-                } 
+                        else if (prop.PropertyType.IsClass && !prop.PropertyType.IsEnum)
+                            Delete(prop.PropertyType, item.GetPropertyValue(prop.Name + "Id"));
+                    }
+                }
             }
 
         }
@@ -1666,7 +1672,7 @@ namespace NostreetsORM
 
             List<int> ids = new List<int>();
             string query = _partialProcs["SelectStatement"].FormatString(childType.Name + "Id")
-                             + _partialProcs["FromStatement"].FormatString(parentType.Name + "_" + childType.Name)
+                             + _partialProcs["FromStatement"].FormatString(parentType.Name + "_" + childType.Name + "Collections")
                              + _partialProcs["WhereStatement"].FormatString(parentType.Name + "Id = " + parentId);
 
             DataProvider.ExecuteCmd(() => Connection, query,
@@ -1740,7 +1746,7 @@ namespace NostreetsORM
                         GetAll(prop.PropertyType, ref tblEntities, type.Name + "_");
                         GetAll(prop.PropertyType.GetTypeOfT(), ref tblEntities);
                     }
-                } 
+                }
             }
 
 
@@ -1831,7 +1837,7 @@ namespace NostreetsORM
                                 collection = new List<object>();
 
                             collection.Add(InstantateFromIds(listType, item, tblEntities));
-                        } 
+                        }
                     }
 
 
@@ -1865,7 +1871,7 @@ namespace NostreetsORM
 
 
             DataProvider.ExecuteNonQuery(() => Connection, "dbo." + GetTableName(type) + "_Delete",
-               param => param.Add(new SqlParameter(type.GetProperties()[0].Name, id)));
+               param => param.Add(new SqlParameter((NeedsIdProp(type) ? "Id" : type.GetProperties()[0].Name), id)));
 
 
 
@@ -1876,7 +1882,7 @@ namespace NostreetsORM
                 else if (prop.PropertyType.IsCollection())
                     DeleteCollection((int)tableObj.GetPropertyValue((NeedsIdProp(prop.PropertyType)) ? "Id" : baseProps[0].Name), type, prop.PropertyType.GetTypeOfT());
 
-                else if (prop.PropertyType.IsClass && !prop.PropertyType.IsEnum)
+                else if (ShouldNormalize(prop.PropertyType) && !prop.PropertyType.IsEnum)
                     Delete(prop.PropertyType, tableObj.GetPropertyValue(prop.Name + "Id"));
             }
 
@@ -1887,7 +1893,7 @@ namespace NostreetsORM
         {
             object result = null;
             List<object> objIds = GetCollection(parentId, parentType, childType);
-            string query = _partialProcs["DeleteRowsStatement"].FormatString(parentType.Name + "_" + childType.Name)
+            string query = _partialProcs["DeleteRowsStatement"].FormatString(parentType.Name + "_" + childType.Name + "Collections")
                          + _partialProcs["WhereStatement"].FormatString(parentType.Name + "Id = " + parentId);
 
 
@@ -1899,7 +1905,8 @@ namespace NostreetsORM
                            result = reader.GetSafeInt32(0);
                        }, null, cmd => cmd.CommandType = CommandType.Text);
 
-            DeleteMultiple(childType, objIds.ToArray());
+            if (objIds != null)
+                DeleteMultiple(childType, objIds.ToArray());
 
             //foreach (object id in objIds)
             //    Delete(childType, id);
