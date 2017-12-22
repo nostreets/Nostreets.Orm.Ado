@@ -1865,7 +1865,7 @@ namespace NostreetsORM
 
 
             DataProvider.ExecuteNonQuery(() => Connection, "dbo." + GetTableName(type) + "_Delete",
-               param => param.Add(new SqlParameter((NeedsIdProp(type)) ? "Id" : type.GetProperties()[0].Name, id)));
+               param => param.Add(new SqlParameter(type.GetProperties()[0].Name, id)));
 
 
 
@@ -1873,11 +1873,10 @@ namespace NostreetsORM
             {
                 if (prop.PropertyType.IsCollection() && prop.PropertyType.GetTypeOfT().IsSystemType())
                     continue;
-
                 else if (prop.PropertyType.IsCollection())
                     DeleteCollection((int)tableObj.GetPropertyValue((NeedsIdProp(prop.PropertyType)) ? "Id" : baseProps[0].Name), type, prop.PropertyType.GetTypeOfT());
 
-                else if (ShouldNormalize(prop.PropertyType) && !prop.PropertyType.IsEnum)
+                else if (prop.PropertyType.IsClass && !prop.PropertyType.IsEnum)
                     Delete(prop.PropertyType, tableObj.GetPropertyValue(prop.Name + "Id"));
             }
 
