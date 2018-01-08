@@ -12,6 +12,10 @@ using NostreetsExtensions.Interfaces;
 using NostreetsExtensions;
 using System.Collections;
 using NostreetsExtensions.Utilities;
+using System.Data.Common;
+using System.Data.Linq;
+using System.Linq.Expressions;
+using Newtonsoft.Json;
 
 namespace NostreetsORM
 {
@@ -28,7 +32,6 @@ namespace NostreetsORM
                     throw new Exception("type's needs to be a custom class to be managed by DBService...");
 
                 _type = type;
-
                 SetUp();
 
                 bool doesExist = CheckIfTableExist(_type),
@@ -71,7 +74,6 @@ namespace NostreetsORM
                     throw new Exception("type's needs to be a custom class to be managed by DBService...");
 
                 _type = type;
-
                 SetUp();
 
                 bool doesExist = CheckIfTableExist(_type),
@@ -114,7 +116,6 @@ namespace NostreetsORM
 
                 _type = type;
                 _nullLock = nullLock;
-
 
                 SetUp();
 
@@ -161,7 +162,6 @@ namespace NostreetsORM
                 _type = type;
                 _nullLock = nullLock;
 
-
                 SetUp();
 
                 bool doesExist = CheckIfTableExist(_type),
@@ -202,6 +202,8 @@ namespace NostreetsORM
             }
         }
 
+        public Func<DataContext> DBContext { get => () => new DataContext(Connection); }
+
         private Dictionary<string, string> ProcTemplates
         {
             get
@@ -224,7 +226,6 @@ namespace NostreetsORM
         private int _tableLayer = 0;
         private Type _type = null;
         private Dictionary<string, string> _partialProcs = new Dictionary<string, string>();
-
 
         #region Internal Logic
 
@@ -1447,21 +1448,21 @@ namespace NostreetsORM
                         GetAll(prop.PropertyType.GetTypeOfT(), ref tblEntities);
                     }
                 }
-            }
 
-
-            if (tblEntities.Any(a => a.Key == type))
-            {
-                foreach (object tbl in tblEntities[type])
+                if (tblEntities.Any(a => a.Key == type))
                 {
-                    if (entities == null)
-                        entities = new List<object>();
+                    foreach (object tbl in tblEntities[type])
+                    {
+                        if (entities == null)
+                            entities = new List<object>();
 
-                    object entity = InstantateFromIds(type, tbl, tblEntities);
+                        object entity = InstantateFromIds(type, tbl, tblEntities);
 
-                    entities.Add(entity);
+                        entities.Add(entity);
+                    }
                 }
             }
+           
 
             return entities;
         }
@@ -2000,56 +2001,62 @@ namespace NostreetsORM
         {
             object entity = type.Instantiate();
 
-            foreach (PropertyInfo prop in type.GetProperties())
+            if (!type.IsCollection())
             {
-                if (prop.PropertyType.IsCollection() && prop.PropertyType.GetTypeOfT().IsSystemType())
-                    continue;
-
-                else if (ShouldNormalize(prop.PropertyType) && !prop.PropertyType.IsEnum)
+                foreach (PropertyInfo prop in type.GetProperties())
                 {
-                    object rowOfProp = tblEntities[prop.PropertyType]
-                                         .FirstOrDefault(a => a.GetPropertyValue((NeedsIdProp(prop.PropertyType)) ? "Id" : prop.PropertyType.GetProperties()[0].Name)
-                                         .Equals(tblOfType.GetPropertyValue(prop.Name + "Id")));
+                    if (prop.PropertyType.IsCollection() && prop.PropertyType.GetTypeOfT().IsSystemType())
+                        continue;
 
-                    object property = InstantateFromIds(prop.PropertyType, rowOfProp, tblEntities);
-
-                    entity.SetPropertyValue(prop.Name, property);
-                }
-                else if (prop.PropertyType.IsCollection())
-                {
-                    IEnumerable<object> collection = null;
-
-                    if (tblEntities.Any(a => a.Key == prop.PropertyType))
+                    else if (ShouldNormalize(prop.PropertyType) && !prop.PropertyType.IsEnum)
                     {
-                        object[] relations = tblEntities[prop.PropertyType]
-                                                            .Where(a => a.GetPropertyValue(type.Name + "Id")
-                                                            .Equals(tblOfType.GetPropertyValue((NeedsIdProp(prop.PropertyType)) ? "Id" : prop.PropertyType.GetProperties()[0].Name))).ToArray();
+                        object rowOfProp = tblEntities[prop.PropertyType]
+                                             .FirstOrDefault(a => a.GetPropertyValue((NeedsIdProp(prop.PropertyType)) ? "Id" : prop.PropertyType.GetProperties()[0].Name)
+                                             .Equals(tblOfType.GetPropertyValue(prop.Name + "Id")));
 
-                        Type listType = prop.PropertyType.GetTypeOfT();
-                        List<object> rowsOfList = tblEntities[listType].Where(a =>
-                                                    relations.Any(b => b.GetPropertyValue(listType.Name + "Id")
-                                                    == a.GetPropertyValue((NeedsIdProp(listType)) ? "Id" : listType.GetProperties()[0].Name))).ToList();
+                        object property = InstantateFromIds(prop.PropertyType, rowOfProp, tblEntities);
 
-
-                        foreach (object item in rowsOfList)
-                        {
-                            if (collection == null)
-                                collection = new List<object>();
-
-                            collection.Add(InstantateFromIds(listType, item, tblEntities));
-                        }
+                        entity.SetPropertyValue(prop.Name, property);
                     }
+                    else if (prop.PropertyType.IsCollection())
+                    {
+                        List<object> collection = null;
+                        Type listType = prop.PropertyType.GetTypeOfT();
+
+                        if (tblEntities.Any(a => a.Key == prop.PropertyType))
+                        {
+                            object[] relations = tblEntities[prop.PropertyType]
+                                                                .Where(a => a.GetPropertyValue(type.Name + "Id")
+                                                                .Equals(tblOfType.GetPropertyValue((NeedsIdProp(prop.PropertyType)) ? "Id" : prop.PropertyType.GetProperties()[0].Name))).ToArray();
+
+                            List<object> rowsOfList = tblEntities[listType].Where(a =>
+                                                        relations.Any(b => b.GetPropertyValue(listType.Name + "Id")
+                                                        .Equals(a.GetPropertyValue((NeedsIdProp(listType)) ? "Id" : listType.GetProperties()[0].Name)))).ToList();
+
+
+                            foreach (object item in rowsOfList)
+                            {
+                                if (collection == null)
+                                    collection = new List<object>();
+
+                                object obj = InstantateFromIds(listType, item, tblEntities);
+
+                                collection.Add(obj);
+                            }
+                        }
 
 
 
-                    entity.SetPropertyValue(prop.Name, collection);
-                }
-                else
-                {
-                    object property = tblOfType.GetPropertyValue((prop.PropertyType.IsEnum) ? prop.Name + "Id" : prop.Name);
-                    entity.SetPropertyValue(prop.Name, property);
+                        entity.SetPropertyValue(prop.Name, collection.Cast(listType));
+                    }
+                    else
+                    {
+                        object property = tblOfType.GetPropertyValue((prop.PropertyType.IsEnum) ? prop.Name + "Id" : prop.Name);
+                        entity.SetPropertyValue(prop.Name, property);
+                    }
                 }
             }
+           
 
             return entity;
         }
@@ -2117,20 +2124,18 @@ namespace NostreetsORM
             Update(model, (int)model.GetPropertyValue("Id"), _type);
         }
 
-        public List<object> Where(string propName, object value)
+        public IEnumerable<object> Where(Func<object, bool> predicate)
         {
-            throw new Exception("Need to implement...");
-        }
+            //using (DataContext context = DBContext())
+            //    DbCommand cmd = context.GetCommand(((IEnumerable<object>)context.GetTable(_type)).Where(predicate).AsQueryable());
 
-        public List<object> Where(Func<object, bool> predicate)
-        {
-            throw new Exception("Need to implement...");
+            return GetAll().Where(predicate);
         }
 
         #endregion
     }
 
-    public class DBService<T> : DBService, IDBService<T>
+    public class DBService<T> : DBService, IDBService<T> where T : class
     {
         public DBService() : base(typeof(T))
         {
@@ -2198,9 +2203,17 @@ namespace NostreetsORM
         {
             base.Update(model);
         }
+
+        public IEnumerable<T> Where(Func<T, bool> predicate)
+        {
+            //using (DataContext context = DBContext())
+            //    DbCommand cmd = context.GetCommand(context.GetTable<T>().Where(predicate).AsQueryable());
+
+            return GetAll().Where(predicate);
+        }
     }
 
-    public class DBService<T, IdType> : DBService<T>, IDBService<T, IdType>
+    public class DBService<T, IdType> : DBService<T>, IDBService<T, IdType> where T : class
     {
         public DBService() : base()
         {
