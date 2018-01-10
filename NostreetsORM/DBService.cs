@@ -47,7 +47,7 @@ namespace NostreetsORM
                     KeyValuePair<Type, Type[]>[] tablesToUpdate = TablesAccessed.Where(a => !CheckIfTypeIsCurrent(a.Key)).ToArray();
 
                     foreach (KeyValuePair<Type, Type[]> tbl in tablesToUpdate)
-                        BackupAndRecreateType(tbl.Key);
+                        BackupAndDropType(tbl.Key);
 
                     CreateTable(_type);
 
@@ -89,7 +89,7 @@ namespace NostreetsORM
                     KeyValuePair<Type, Type[]>[] tablesToUpdate = TablesAccessed.Where(a => !CheckIfTypeIsCurrent(a.Key)).ToArray();
 
                     foreach (KeyValuePair<Type, Type[]> tbl in tablesToUpdate)
-                        BackupAndRecreateType(tbl.Key);
+                        BackupAndDropType(tbl.Key);
 
                     CreateTable(_type);
 
@@ -132,7 +132,7 @@ namespace NostreetsORM
                     KeyValuePair<Type, Type[]>[] tablesToUpdate = TablesAccessed.Where(a => !CheckIfTypeIsCurrent(a.Key)).ToArray();
 
                     foreach (KeyValuePair<Type, Type[]> tbl in tablesToUpdate)
-                        BackupAndRecreateType(tbl.Key);
+                        BackupAndDropType(tbl.Key);
 
                     CreateTable(_type);
 
@@ -177,7 +177,7 @@ namespace NostreetsORM
                     KeyValuePair<Type, Type[]>[] tablesToUpdate = TablesAccessed.Where(a => !CheckIfTypeIsCurrent(a.Key)).ToArray();
 
                     foreach (KeyValuePair<Type, Type[]> tbl in tablesToUpdate)
-                        BackupAndRecreateType(tbl.Key);
+                        BackupAndDropType(tbl.Key);
 
                     CreateTable(_type);
 
@@ -428,7 +428,7 @@ namespace NostreetsORM
             return result;
         }
 
-        private void BackupAndRecreateType(Type type)
+        private void BackupAndDropType(Type type)
         {
             List<KeyValuePair<Type, Type[]>> tblsToBackUp = TablesAccessed.Where(a => (a.Value != null && a.Value.Any(b => b == type))).ToList() ?? null;
             Type[] typeRelations = (TablesAccessed.Keys.Contains(type)) ? TablesAccessed[type] : null;
@@ -438,7 +438,7 @@ namespace NostreetsORM
             if (tblsToBackUp != null && tblsToBackUp.Count > 0)
                 foreach (KeyValuePair<Type, Type[]> tbl in tblsToBackUp)
                     if (!CheckIfBackUpExist(tbl.Key))
-                        BackupAndRecreateType(tbl.Key);
+                        BackupAndDropType(tbl.Key);
 
 
 
@@ -1462,7 +1462,7 @@ namespace NostreetsORM
                     }
                 }
             }
-           
+
 
             return entities;
         }
@@ -1529,7 +1529,7 @@ namespace NostreetsORM
             if (model == null)
                 model = type.Instantiate();
 
-            object result = null;
+            object id = null;
             Dictionary<Type, object> refs = new Dictionary<Type, object>();
             PropertyInfo[] normalizedProps = type.GetProperties().Where(a =>
                                                              (!a.PropertyType.IsEnum && ShouldNormalize(a.PropertyType)
@@ -1577,20 +1577,24 @@ namespace NostreetsORM
             }
 
 
-            object id = Insert(model, type, refs);
-            result = id;
+            id = Insert(model, type, refs);
 
 
             for (int i = 0; i < relations.Count; i++)
             {
                 var relation = relations.ElementAt(i);
-                if (relation.Key.Key == model.GetType())
+                if (relation.Key.Key == type)
                 {
                     relations[relation.Key] = new KeyValuePair<object, object[]>(id, relation.Value.Value);
+
+                    if (relation.Value.Value.Length > 1)
+                        foreach (object val in relation.Value.Value)
+                            InsertRelationship(relation.Key.Key, relation.Key.Value, (int)id, (int)val);
                 }
             }
 
-            return result;
+
+            return id;
         }
 
         private object Insert(object model, Type type, Dictionary<Type, object> ids = null)
@@ -1734,7 +1738,7 @@ namespace NostreetsORM
                         }
                     }
 
-                    if (list.Length > i)
+                    if (list != null && list.Length > i)
                         for (; i < list.Length; i++)
                         {
                             //Dictionary<KeyValuePair<Type, Type>, KeyValuePair<object, object[]>> reffs = new Dictionary<KeyValuePair<Type, Type>, KeyValuePair<object, object[]>>();
@@ -2056,7 +2060,7 @@ namespace NostreetsORM
                     }
                 }
             }
-           
+
 
             return entity;
         }
@@ -2096,19 +2100,19 @@ namespace NostreetsORM
             Dictionary<KeyValuePair<Type, Type>, KeyValuePair<object, object[]>> relations = new Dictionary<KeyValuePair<Type, Type>, KeyValuePair<object, object[]>>();
             id = Insert(model, _type, ref relations);
 
+            //foreach (PropertyInfo p in model.GetType().GetProperties())
+            //{
+            //    if (!prop.PropertyType.IsCollection())
+            //        continue;
 
-            foreach (PropertyInfo prop in model.GetType().GetProperties())
-            {
-                if (!prop.PropertyType.IsCollection())
-                    continue;
 
+            //    KeyValuePair<KeyValuePair<Type, Type>, KeyValuePair<object, object[]>> relateIds = relations.FirstOrDefault(a => a.Key.Key == model.GetType() && a.Key.Value == prop.PropertyType.GetTypeOfT());
 
-                KeyValuePair<KeyValuePair<Type, Type>, KeyValuePair<object, object[]>> relateIds = relations.FirstOrDefault(a => a.Key.Key == model.GetType() && a.Key.Value == prop.PropertyType.GetTypeOfT());
+            //    if (relateIds.Value.Value != null && relateIds.Value.Value.Length > 1)
+            //        foreach (object val in relateIds.Value.Value)
+            //            InsertRelationship(relateIds.Key.Key, relateIds.Key.Value, (int)val, (int)relateIds.Value.Key);
+            //}
 
-                if (relateIds.Value.Value != null && relateIds.Value.Value.Length > 1)
-                    foreach (object val in relateIds.Value.Value)
-                        InsertRelationship(relateIds.Key.Key, relateIds.Key.Value, (int)val, (int)relateIds.Value.Key);
-            }
 
             return id;
         }
