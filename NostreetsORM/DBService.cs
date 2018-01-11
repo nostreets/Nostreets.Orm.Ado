@@ -2146,33 +2146,35 @@ namespace NostreetsORM
         #endregion
     }
 
-    public class DBService<T> : DBService, IDBService<T> where T : class
+    public class DBService<T> : IDBService<T> where T : class
     {
-        public DBService() : base(typeof(T))
+        public DBService()
         {
-
+            _baseSrv = new DBService(typeof(T));
         }
 
-        public DBService(string connectionKey) : base(typeof(T), connectionKey)
+        public DBService(string connectionKey)
         {
-
+            _baseSrv = new DBService(typeof(T), connectionKey);
         }
 
-        public DBService(bool nullLock) : base(typeof(T), nullLock)
+        public DBService(bool nullLock)
         {
-
+            _baseSrv = new DBService(typeof(T), nullLock);
         }
 
-        public DBService(string connectionKey, bool nullLock) : base(typeof(T), connectionKey, nullLock)
+        public DBService(string connectionKey, bool nullLock)
         {
-
+            _baseSrv = new DBService(typeof(T), connectionKey, nullLock);
         }
 
-        public new List<T> GetAll()
+        private DBService _baseSrv = null;
+
+        public List<T> GetAll()
         {
             List<T> result = null;
             Type listType = null;
-            List<object> list = base.GetAll();
+            List<object> list = _baseSrv.GetAll();
 
             if (list != null)
             {
@@ -2183,19 +2185,18 @@ namespace NostreetsORM
                     throw new Exception("objects in list are not the right Type of entity to access..");
 
                 if (result == null)
-                    result = new List<T>();
-
-                foreach (object item in list)
-                    result.Add((T)item);
+                    result = list.Cast<T>().ToList();
+                //foreach (object item in list)
+                //    result.Add((T)item);
             }
 
             return result;
         }
 
-        public new T Get(object id)
+        public T Get(object id)
         {
             T result = default(T);
-            object item = base.Get(id);
+            object item = _baseSrv.Get(id);
 
             if (item.GetType() != typeof(T))
                 throw new Exception("item is not the right Type of entity to access..");
@@ -2207,49 +2208,53 @@ namespace NostreetsORM
 
         public object Insert(T model)
         {
-            return base.Insert(model);
+            return _baseSrv.Insert(model);
         }
 
         public void Update(T model)
         {
-            base.Update(model);
+            _baseSrv.Update(model);
         }
 
         public IEnumerable<T> Where(Func<T, bool> predicate)
         {
-            //using (DataContext context = DBContext())
-            //    DbCommand cmd = context.GetCommand(context.GetTable<T>().Where(predicate).AsQueryable());
-
             return GetAll().Where(predicate);
+        }
+
+        public void Delete(object id)
+        {
+            _baseSrv.Delete(id);
         }
     }
 
-    public class DBService<T, IdType> : DBService<T>, IDBService<T, IdType> where T : class
+    public class DBService<T, IdType> : IDBService<T, IdType> where T : class
     {
-        public DBService() : base()
+        public DBService()
         {
-
+            _baseSrv = new DBService(typeof(T));
         }
 
-        public DBService(string connectionKey) : base(connectionKey)
+        public DBService(string connectionKey)
         {
-
+            _baseSrv = new DBService(typeof(T), connectionKey);
         }
 
-        public DBService(bool nullLock) : base(nullLock)
+        public DBService(bool nullLock)
         {
-
+            _baseSrv = new DBService(typeof(T), nullLock);
         }
 
-        public DBService(string connectionKey, bool nullLock) : base(connectionKey, nullLock)
+        public DBService(string connectionKey, bool nullLock)
         {
-
+            _baseSrv = new DBService(typeof(T), connectionKey, nullLock);
         }
+
+        private DBService _baseSrv = null;
 
         public T Get(IdType id)
         {
             T result = default(T);
-            object item = base.Get(id);
+            object item = _baseSrv.Get(id);
 
             if (item.GetType() != typeof(T))
                 throw new Exception("item is not the right Type of entity to access..");
@@ -2259,11 +2264,11 @@ namespace NostreetsORM
             return result;
         }
 
-        public new IdType Insert(T model)
+        public IdType Insert(T model)
         {
             IdType result = default(IdType);
 
-            object id = base.Insert(model);
+            object id = _baseSrv.Insert(model);
 
             if (id.GetType() != typeof(IdType))
                 throw new Exception("id is not the right Type...");
@@ -2275,9 +2280,141 @@ namespace NostreetsORM
 
         public void Delete(IdType id)
         {
-            base.Delete(id);
+            _baseSrv.Delete(id);
         }
 
+        public List<T> GetAll()
+        {
+            List<T> result = null;
+            Type listType = null;
+            List<object> list = _baseSrv.GetAll();
+
+            if (list != null)
+            {
+                if (list.Count > 0)
+                    listType = list[0].GetType();
+
+                if (listType != typeof(T))
+                    throw new Exception("objects in list are not the right Type of entity to access..");
+
+                if (result == null)
+                    result = list.Cast<T>().ToList();
+                //foreach (object item in list)
+                //    result.Add((T)item);
+            }
+
+            return result;
+        }
+
+        public void Update(T model)
+        {
+            _baseSrv.Update(model);
+        }
+
+        public IEnumerable<T> Where(Func<T, bool> predicate)
+        {
+            return GetAll().Where(predicate);
+        }
+    }
+
+    public class DBService<T, IdType, AddType, UpdateType> : IDBService<T, IdType, AddType, UpdateType> where T : class
+    {
+        public DBService()
+        {
+            _baseSrv = new DBService(typeof(T));
+        }
+
+        public DBService(string connectionKey)
+        {
+            _baseSrv = new DBService(typeof(T), connectionKey);
+        }
+
+        public DBService(bool nullLock)
+        {
+            _baseSrv = new DBService(typeof(T), nullLock);
+        }
+
+        public DBService(string connectionKey, bool nullLock)
+        {
+            _baseSrv = new DBService(typeof(T), connectionKey, nullLock);
+        }
+
+        private DBService _baseSrv = null;
+
+        public T Get(IdType id)
+        {
+            T result = default(T);
+            object item = _baseSrv.Get(id);
+
+            if (item.GetType() != typeof(T))
+                throw new Exception("item is not the right Type of entity to access..");
+
+            result = (T)item;
+
+            return result;
+        }
+
+        public IdType Insert(T model)
+        {
+            IdType result = default(IdType);
+
+            object id = _baseSrv.Insert(model);
+
+            if (id.GetType() != typeof(IdType))
+                throw new Exception("id is not the right Type...");
+
+            result = (IdType)id;
+
+            return result;
+        }
+
+        public void Delete(IdType id)
+        {
+            _baseSrv.Delete(id);
+        }
+
+        public List<T> GetAll()
+        {
+            List<T> result = null;
+            Type listType = null;
+            List<object> list = _baseSrv.GetAll();
+
+            if (list != null)
+            {
+                if (list.Count > 0)
+                    listType = list[0].GetType();
+
+                if (listType != typeof(T))
+                    throw new Exception("objects in list are not the right Type of entity to access..");
+
+                if (result == null)
+                    result = list.Cast<T>().ToList();
+                //foreach (object item in list)
+                //    result.Add((T)item);
+            }
+
+            return result;
+        }
+
+        public void Update(T model)
+        {
+            _baseSrv.Update(model);
+        }
+
+        public IEnumerable<T> Where(Func<T, bool> predicate)
+        {
+            return GetAll().Where(predicate);
+        }
+
+        public IdType Insert(AddType model, Converter<AddType, T> converter)
+        {
+            return Insert(converter(model));
+        }
+
+        public void Update(UpdateType model, Converter<UpdateType, T> converter)
+        {
+            Update(converter(model));
+        }
     }
 
 }
