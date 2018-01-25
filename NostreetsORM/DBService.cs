@@ -1365,7 +1365,7 @@ namespace NostreetsORM
 
                 }, null, cmd => cmd.CommandType = CommandType.Text);
 
-            if (currentEnums.Count == dbEnums.Count) { result = true; }
+            if (dbEnums != null && currentEnums.Count == dbEnums.Count) { result = true; }
 
             return result;
         }
