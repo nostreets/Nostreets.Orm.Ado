@@ -404,15 +404,17 @@ namespace NostreetsORM
         private string DeterminSQLType(Type type, string parentTable = null)
         {
             string statement = null;
+            type = Nullable.GetUnderlyingType(type) ?? type;
 
             if (ShouldNormalize(type))
-            {
                 statement = "INT";
-            }
             else
-            {
                 switch (type.Name)
                 {
+                    case nameof(Guid):
+                        statement = "UNIQUEIDENTIFIER";
+                        break;
+
                     case nameof(String):
                         statement = "NVARCHAR (MAX)";
                         break;
@@ -423,6 +425,29 @@ namespace NostreetsORM
 
                     case nameof(Int32):
                         statement = "INT";
+                        break;
+
+                    case nameof(Int64):
+                        statement = "BIGINT";
+                        break;
+
+                    case nameof(Decimal):
+                        statement = "DECIMAL";
+                        break;
+                    case nameof(Double):
+                        statement = "FLOAT";
+                        break;
+
+                    case nameof(Single):
+                        statement = "REAL";
+                        break;
+
+                    case nameof(TimeSpan):
+                        statement = "TIME";
+                        break;
+                   
+                    case nameof(DateTimeOffset):
+                        statement = "DATETIMEOFFSET" + ((_tableCreation && !_procCreation) ? " DEFAULT(CAST(GETDATE() AS DATETIMEOFFSET)" : "");
                         break;
 
                     case nameof(Boolean):
@@ -437,7 +462,6 @@ namespace NostreetsORM
                         statement = "NVARCHAR (MAX)";
                         break;
                 }
-            }
 
             return statement;
         }
