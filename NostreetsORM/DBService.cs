@@ -1028,7 +1028,7 @@ namespace NostreetsORM
                     List<PropertyInfo> baseProps = type.GetProperties().ToList();
                     //List<PropertyInfo> excludedProps = baseProps.GetPropertiesByAttribute<NotMappedAttribute>(type);
                     //excludedProps.AddRange(baseProps.Where(a => a.PropertyType.IsCollection()));
-                    List<PropertyInfo> includedProps = (_propertiesIngored[type] != null && _propertiesIngored[type].Length > 0) ? baseProps.Where(a => !_propertiesIngored[type].Contains(a)).ToList() : baseProps;
+                    List<PropertyInfo> includedProps = (_propertiesIngored.Count > 0 && _propertiesIngored[type] != null && _propertiesIngored[type].Length > 0) ? baseProps.Where(a => !_propertiesIngored[type].Contains(a)).ToList() : baseProps;
 
                     List<string> oldColumns = GetOldColumns(type);
                     List<string> matchingColumns = oldColumns.Where(a => includedProps.Any(b => a == ((ShouldNormalize(b.PropertyType)) ? b.Name + "Id" : b.Name))).ToList();
