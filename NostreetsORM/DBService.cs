@@ -1026,8 +1026,6 @@ namespace NostreetsORM
                 else
                 {
                     List<PropertyInfo> baseProps = type.GetProperties().ToList();
-                    //List<PropertyInfo> excludedProps = baseProps.GetPropertiesByAttribute<NotMappedAttribute>(type);
-                    //excludedProps.AddRange(baseProps.Where(a => a.PropertyType.IsCollection()));
                     List<PropertyInfo> includedProps = (_propertiesIngored.Count > 0 && _propertiesIngored[type] != null && _propertiesIngored[type].Length > 0) ? baseProps.Where(a => !_propertiesIngored[type].Contains(a)).ToList() : baseProps;
 
                     List<string> oldColumns = GetOldColumns(type);
@@ -1044,17 +1042,24 @@ namespace NostreetsORM
 
                 }
 
-                DataProvider.ExecuteCmd(() => Connection,
-                   query,
-                    null,
-                    (reader, set) =>
-                    {
-                        result = DataMapper<object>.Instance.MapToObject(reader);
-                    },
-                    null, mod => mod.CommandType = CommandType.Text);
+                try
+                {
+                    DataProvider.ExecuteCmd(() => Connection,
+                               query,
+                                null,
+                                (reader, set) =>
+                                {
+                                    result = DataMapper<object>.Instance.MapToObject(reader);
+                                },
+                                null, mod => mod.CommandType = CommandType.Text);
+                    DropBackupTable(type, prefix);
+                }
+                catch (Exception ex)
+                {
+                    DropBackupTable(type, prefix);
+                    throw ex;
+                }
 
-
-                DropBackupTable(type, prefix);
             }
 
         }
