@@ -27,7 +27,7 @@ namespace NostreetsORM
             try
             {
                 if (NeedsIdProp(type))
-                    throw new Exception("type's first public property needs to be an type of int named Id to be managed by DBService...");
+                    throw new Exception("type's first public property needs to be an type of int or Guid named Id to be managed by DBService...");
 
                 if (!ShouldNormalize(type))
                     throw new Exception("type's needs to be a custom class to be managed by DBService...");
@@ -82,7 +82,7 @@ namespace NostreetsORM
             try
             {
                 if (NeedsIdProp(type))
-                    throw new Exception("type's first public property needs to be an type of int named Id to be managed by DBService...");
+                    throw new Exception("type's first public property needs to be an type of int or Guid named Id to be managed by DBService...");
 
                 if (!ShouldNormalize(type))
                     throw new Exception("type's needs to be a custom class to be managed by DBService...");
@@ -137,7 +137,7 @@ namespace NostreetsORM
             try
             {
                 if (NeedsIdProp(type))
-                    throw new Exception("type's first public property needs to be an type of int named Id to be managed by DBService...");
+                    throw new Exception("type's first public property needs to be an type of int or Guid named Id to be managed by DBService...");
 
                 if (!ShouldNormalize(type))
                     throw new Exception("type's needs to be a custom class to be managed by DBService...");
@@ -193,7 +193,7 @@ namespace NostreetsORM
             try
             {
                 if (NeedsIdProp(type))
-                    throw new Exception("type's first public property needs to be an type of int named Id to be managed by DBService...");
+                    throw new Exception("type's first public property needs to be an type of int or Guid named Id to be managed by DBService...");
 
                 if (!ShouldNormalize(type))
                     throw new Exception("type's needs to be a custom class to be managed by DBService...");
@@ -327,7 +327,15 @@ namespace NostreetsORM
 
         private bool NeedsIdProp(Type type)
         {
-            return !type.IsClass ? false : (type.GetPropertiesByAttribute<KeyAttribute>() != null) ? false : type.GetProperties()[0].PropertyType != typeof(int) ? true : type.GetProperties()[0].Name.ToLower().Contains("id") ? false : true;
+            return !type.IsClass 
+                        ? false 
+                    : (type.GetPropertiesByAttribute<KeyAttribute>() != null) 
+                        ? false 
+                    : (type.GetProperties()[0].PropertyType != typeof(int) || type.GetProperties()[0].PropertyType != typeof(Guid) || type.GetProperties()[0].PropertyType != typeof(string)) 
+                        ? true 
+                    : type.GetProperties()[0].Name.ToLower().Contains("id") 
+                        ? false 
+                        : true;
         }
 
         private int GetPKOrdinalOfType(Type type)
@@ -401,7 +409,7 @@ namespace NostreetsORM
 
         }
 
-        private string DeterminSQLType(Type type, string parentTable = null)
+        private string DeterminSQLType(Type type, bool needsDefault = false)
         {
             string statement = null;
             type = Nullable.GetUnderlyingType(type) ?? type;
@@ -412,11 +420,11 @@ namespace NostreetsORM
                 switch (type.Name)
                 {
                     case nameof(Guid):
-                        statement = "UNIQUEIDENTIFIER";
+                        statement = "UNIQUEIDENTIFIER" + ((needsDefault) ? " DEFAULT(NEWID())" : "");
                         break;
 
                     case nameof(String):
-                        statement = "NVARCHAR (MAX)";
+                        statement = "NVARCHAR (MAX)" + ((needsDefault) ? " DEFAULT(CAST(NEWID() AS NVARCHAR (MAX)))" : "");
                         break;
 
                     case nameof(Int16):
@@ -447,7 +455,7 @@ namespace NostreetsORM
                         break;
                    
                     case nameof(DateTimeOffset):
-                        statement = "DATETIMEOFFSET" + ((_tableCreation && !_procCreation) ? " DEFAULT(CAST(GETDATE() AS DATETIMEOFFSET)" : "");
+                        statement = "DATETIMEOFFSET" + ((needsDefault) ? " DEFAULT(CAST(GETDATE() AS DATETIMEOFFSET)" : "");
                         break;
 
                     case nameof(Boolean):
@@ -455,11 +463,11 @@ namespace NostreetsORM
                         break;
 
                     case nameof(DateTime):
-                        statement = "DATETIME2 (7)" + ((_tableCreation && !_procCreation) ? " DEFAULT(GETDATE())" : "");
+                        statement = "DATETIME2 (7)" + ((needsDefault) ? " DEFAULT(GETDATE())" : "");
                         break;
 
                     default:
-                        statement = "NVARCHAR (MAX)";
+                        statement = "NVARCHAR (MAX)" + ((needsDefault) ? " DEFAULT(CAST(NEWID() AS NVARCHAR (MAX)))" : "");
                         break;
                 }
 
@@ -723,7 +731,7 @@ namespace NostreetsORM
                 if (i != pkOrdinal /*> 0*/)
                 {
                     inputs.Add("@" + props[i].Name + " "
-                        + DeterminSQLType(props[i].PropertyType)
+                        + DeterminSQLType(props[i].PropertyType, false)
                         + ((props[props.Length - 1] == props[i] || (props[props.Length - 1] == props[i + 1] && props[i + 1].PropertyType.IsCollection()))
                         ? "" : ",")
                     );
@@ -892,9 +900,9 @@ namespace NostreetsORM
                                     ? props[i].Name
                                     : props[i].Name + "Id",
 
-                                DeterminSQLType(props[i].PropertyType),
+                                DeterminSQLType(props[i].PropertyType, props[pkOrdinal] == props[i]),
 
-                                (props[pkOrdinal] == props[i])
+                                (props[pkOrdinal] == props[i] && props[i].GetType() == typeof(int))
                                     ? "IDENTITY (1, 1) NOT NULL, "
                                     : "{0}NULL, ".FormatString((_nullLock || ShouldNormalize(props[i].PropertyType)) ? "NOT " : "")
                             )
@@ -1409,62 +1417,63 @@ namespace NostreetsORM
                 return CheckIfEnumIsCurrent(type);
 
             else
-                if (ShouldNormalize(type))
             {
-                List<string> columnsInTable = DataProvider.GetSchema(() => Connection, GetTableName(type));
-                List<PropertyInfo> baseProps = type.GetProperties().ToList();
-
-
-                List<PropertyInfo> excludedProps = type.GetPropertiesByAttribute<NotMappedAttribute>();
-                if (excludedProps != null)
-                    _propertiesIngored.Add(excludedProps);
-
-
-                //excludedProps.AddRange(baseProps.Where(a => a.PropertyType.IsCollection()));
-                List<PropertyInfo> includedProps = baseProps.Where(a => (excludedProps != null && !excludedProps.Contains(a) && !a.PropertyType.IsCollection()) || !a.PropertyType.IsCollection()).ToList();
-
-                if (NeedsIdProp(type))
+                if (ShouldNormalize(type))
                 {
-                    for (int i = 0; i < includedProps.Count; i++)
-                        if (includedProps[i].Name == "Id")
-                            includedProps.Remove(includedProps[i]);
-
-                    includedProps.Prepend(type.AddProperty(typeof(int), "Id").GetProperty("Id"));
-                }
+                    List<string> columnsInTable = DataProvider.GetSchema(() => Connection, GetTableName(type));
+                    List<PropertyInfo> baseProps = type.GetProperties().ToList();
 
 
-                foreach (string col in columnsInTable)
-                    if (!includedProps.Any(a => ((ShouldNormalize(a.PropertyType)) ? a.Name + "Id" : a.Name) == col))
-                        return false;
+                    List<PropertyInfo> excludedProps = type.GetPropertiesByAttribute<NotMappedAttribute>();
+                    if (excludedProps != null)
+                        _propertiesIngored.Add(excludedProps);
 
 
-                foreach (PropertyInfo prop in includedProps)
-                    if (!columnsInTable.Any(a => ((ShouldNormalize(prop.PropertyType)) ? prop.Name + "Id" : prop.Name) == a))
-                        return false;
+                    List<PropertyInfo> includedProps = baseProps.Where(a => (excludedProps != null && !excludedProps.Contains(a) && !a.PropertyType.IsCollection()) || !a.PropertyType.IsCollection()).ToList();
 
-
-
-                if (includedProps.Any(a => ShouldNormalize(a.PropertyType)))
-                {
-                    PropertyInfo[] propsToCheck = includedProps.Where(a => ShouldNormalize(a.PropertyType)).DistinctBy(a => a.PropertyType).ToArray();
-                    foreach (PropertyInfo propToCheck in propsToCheck)
-                        if (!CheckIfTypeIsCurrent(propToCheck.PropertyType))
-                            return false;
-                }
-
-
-                if (baseProps.Any(a => (excludedProps != null && !excludedProps.Contains(a) && a.PropertyType.IsCollection()) || a.PropertyType.IsCollection()))
-                {
-                    PropertyInfo[] propsToCheck = baseProps.Where(a => (excludedProps != null && !excludedProps.Contains(a) && a.PropertyType.IsCollection()) || a.PropertyType.IsCollection()).Distinct().ToArray();
-                    foreach (PropertyInfo propToCheck in propsToCheck)
+                    if (NeedsIdProp(type))
                     {
-                        Type listType = propToCheck.PropertyType.GetTypeOfT();
+                        for (int i = 0; i < includedProps.Count; i++)
+                            if (includedProps[i].Name == "Id")
+                                includedProps.Remove(includedProps[i]);
 
-                        if (!listType.IsSystemType() && !CheckIfTypeIsCurrent(listType))
+                        includedProps.Prepend(type.AddProperty(typeof(int), "Id").GetProperty("Id"));
+                    }
+
+
+                    foreach (string col in columnsInTable)
+                        if (!includedProps.Any(a => ((ShouldNormalize(a.PropertyType)) ? a.Name + "Id" : a.Name) == col))
                             return false;
 
-                        if (!CheckIfTypeIsCurrent(propToCheck.PropertyType, type.Name.SafeName() + "_" + propToCheck.Name + "_"))
+
+                    foreach (PropertyInfo prop in includedProps)
+                        if (!columnsInTable.Any(a => ((ShouldNormalize(prop.PropertyType)) ? prop.Name + "Id" : prop.Name) == a))
                             return false;
+
+
+
+                    if (includedProps.Any(a => ShouldNormalize(a.PropertyType)))
+                    {
+                        PropertyInfo[] propsToCheck = includedProps.Where(a => ShouldNormalize(a.PropertyType)).DistinctBy(a => a.PropertyType).ToArray();
+                        foreach (PropertyInfo propToCheck in propsToCheck)
+                            if (!CheckIfTypeIsCurrent(propToCheck.PropertyType))
+                                return false;
+                    }
+
+
+                    if (baseProps.Any(a => (excludedProps != null && !excludedProps.Contains(a) && a.PropertyType.IsCollection()) || a.PropertyType.IsCollection()))
+                    {
+                        PropertyInfo[] propsToCheck = baseProps.Where(a => (excludedProps != null && !excludedProps.Contains(a) && a.PropertyType.IsCollection()) || a.PropertyType.IsCollection()).Distinct().ToArray();
+                        foreach (PropertyInfo propToCheck in propsToCheck)
+                        {
+                            Type listType = propToCheck.PropertyType.GetTypeOfT();
+
+                            if (!listType.IsSystemType() && !CheckIfTypeIsCurrent(listType))
+                                return false;
+
+                            if (!CheckIfTypeIsCurrent(propToCheck.PropertyType, type.Name.SafeName() + "_" + propToCheck.Name + "_"))
+                                return false;
+                        }
                     }
                 }
             }
