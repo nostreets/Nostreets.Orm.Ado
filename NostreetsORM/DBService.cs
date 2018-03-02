@@ -409,7 +409,7 @@ namespace NostreetsORM
 
         }
 
-        private string DeterminSQLType(Type type, bool needsDefault = false)
+        private string DeterminSQLType(Type type, bool needsDefault = false, bool isPK = false)
         {
             string statement = null;
             type = Nullable.GetUnderlyingType(type) ?? type;
@@ -424,7 +424,7 @@ namespace NostreetsORM
                         break;
 
                     case nameof(String):
-                        statement = "NVARCHAR (MAX)" + ((needsDefault) ? " DEFAULT(CAST(NEWID() AS NVARCHAR (MAX)))" : "");
+                        statement = "NVARCHAR (" + ((isPK) ? "128" : "MAX") + ")" + ((needsDefault) ? " DEFAULT(CAST(NEWID() AS NVARCHAR (128)))" : "");
                         break;
 
                     case nameof(Int16):
@@ -467,7 +467,7 @@ namespace NostreetsORM
                         break;
 
                     default:
-                        statement = "NVARCHAR (MAX)" + ((needsDefault) ? " DEFAULT(CAST(NEWID() AS NVARCHAR (MAX)))" : "");
+                        statement = "NVARCHAR (" + ((isPK) ? "128" : "MAX") + ")" + ((needsDefault) ? " DEFAULT(CAST(NEWID() AS NVARCHAR (128)))" : "");
                         break;
                 }
 
@@ -900,7 +900,7 @@ namespace NostreetsORM
                                     ? props[i].Name
                                     : props[i].Name + "Id",
 
-                                DeterminSQLType(props[i].PropertyType, pkOrdinal == i),
+                                DeterminSQLType(props[i].PropertyType, pkOrdinal == i, pkOrdinal == i),
 
                                 (pkOrdinal == i && props[i].GetType() == typeof(int))
                                     ? "IDENTITY (1, 1) NOT NULL, "
@@ -1449,7 +1449,7 @@ namespace NostreetsORM
 
                     List<PropertyInfo> excludedProps = type.GetPropertiesByAttribute<NotMappedAttribute>();
                     if (excludedProps != null)
-                        _propertiesIngored.Add(excludedProps);
+                        _propertiesIngored.AddValues(excludedProps);
 
 
                     List<PropertyInfo> includedProps = baseProps.Where(a => (excludedProps != null && !excludedProps.Contains(a) && !a.PropertyType.IsCollection()) || !a.PropertyType.IsCollection()).ToList();
@@ -1534,7 +1534,7 @@ namespace NostreetsORM
                 null, mod => mod.CommandType = CommandType.Text);
 
 
-            List<string> result = list?.Where(a => a.Contains(GetTableName(type, prefix))).ToList();
+            List<string> result = list?.Where(a => a.Contains(GetTableName(type, prefix).SafeName())).ToList();
 
             return result;
         }
