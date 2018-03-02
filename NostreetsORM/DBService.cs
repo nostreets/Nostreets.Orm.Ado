@@ -327,15 +327,23 @@ namespace NostreetsORM
 
         private bool NeedsIdProp(Type type)
         {
-            return !type.IsClass
-                        ? false
-                    : (type.GetPropertiesByAttribute<KeyAttribute>() != null)
-                        ? false
-                    : (type.GetProperties()[0].PropertyType != typeof(int) || type.GetProperties()[0].PropertyType != typeof(Guid) || type.GetProperties()[0].PropertyType != typeof(string))
-                        ? true
-                    : type.GetProperties()[0].Name.ToLower().Contains("id")
-                        ? false
-                        : true;
+            bool result = true;
+            PropertyInfo pk = type.GetPropertiesByAttribute<KeyAttribute>()?.FirstOrDefault();
+
+            if (!type.IsClass)
+                result = false;
+
+            else if (pk != null && (pk.PropertyType == typeof(int) || pk.PropertyType == typeof(Guid) || pk.PropertyType == typeof(string)) && pk.Name.ToLower().Contains("id"))
+                result = false;
+
+            else if (pk != null)
+                throw new Exception("Primary Key must be the data type of Int32, Guid, or string...");
+
+            else if (type.GetProperties()[0].Name.ToLower().Contains("id") && (type.GetProperties()[0].PropertyType == typeof(int) || type.GetProperties()[0].PropertyType == typeof(Guid) || type.GetProperties()[0].PropertyType == typeof(string)))
+                result = false;
+
+            return result;
+            
         }
 
         private int GetPKOrdinalOfType(Type type)
@@ -704,24 +712,19 @@ namespace NostreetsORM
                    columns = null,
                    values = null,
                    select = null,
-                   joins = null,
-                   delete = null;
+                   joins = null;
 
             List<string> inputs = new List<string>(),
                          colm = new List<string>(),
                          val = new List<string>(),
                          sel = new List<string>(),
                          jns = new List<string>(),
-                         dels = new List<string>(),
                          innerUpdt = new List<string>();
 
             PropertyInfo[] props = type.GetProperties();
 
             for (int i = 0; i < props.Length; i++)
             {
-                string PK = (props[i].PropertyType.IsEnum || NeedsIdProp(props[i].PropertyType) ? "Id" : GetPKOfTable(props[i].PropertyType));
-
-
                 if (props[i].PropertyType.IsCollection())
                 {
                     skippedProps.Add(i);
@@ -797,16 +800,11 @@ namespace NostreetsORM
             }
 
 
-            if (dels.Count > 0)
-                dels.Reverse();
-
-
             inputParams = String.Join(" ", inputs.ToArray());
             columns = String.Join(" ", colm.ToArray());
             values = String.Join(" ", val.ToArray());
             select = String.Join(" ", sel.ToArray());
             joins = String.Join(" ", jns.ToArray());
-            delete = "DELETE {0} WHERE {1} = @{1} ";
 
 
             switch (template.Key)
@@ -902,7 +900,7 @@ namespace NostreetsORM
 
                                 DeterminSQLType(props[i].PropertyType, pkOrdinal == i, pkOrdinal == i),
 
-                                (pkOrdinal == i && props[i].GetType() == typeof(int))
+                                (pkOrdinal == i && props[i].PropertyType == typeof(int))
                                     ? "IDENTITY (1, 1) NOT NULL, "
                                     : "{0}NULL, ".FormatString((_nullLock || ShouldNormalize(props[i].PropertyType) || pkOrdinal == i) ? "NOT " : "")
                             )
