@@ -591,7 +591,9 @@ namespace NostreetsORM
             if (prefix == null)
                 throw new Exception("prefix cannot be null...");
 
-            prefix = prefix.SafeName();
+
+
+            //prefix = prefix.SafeName();
             Type collType = type.GetTypeOfT();
             string skimmedPrefix = prefix.Split('_')[0],
                    query = null,
@@ -1532,7 +1534,7 @@ namespace NostreetsORM
                 null, mod => mod.CommandType = CommandType.Text);
 
 
-            List<string> result = list?.Where(a => a.Contains(GetTableName(type, prefix).SafeName())).ToList();
+            List<string> result = list?.Where(a => a.Contains(GetTableName(type, prefix))).ToList();
 
             return result;
         }
@@ -2394,20 +2396,6 @@ namespace NostreetsORM
             Dictionary<KeyValuePair<Type, PropertyInfo>, KeyValuePair<object, object[]>> relations = new Dictionary<KeyValuePair<Type, PropertyInfo>, KeyValuePair<object, object[]>>();
             id = Insert(model, _type, ref relations);
 
-            //foreach (PropertyInfo p in model.GetType().GetProperties())
-            //{
-            //    if (!prop.PropertyType.IsCollection())
-            //        continue;
-
-
-            //    KeyValuePair<KeyValuePair<Type, Type>, KeyValuePair<object, object[]>> relateIds = relations.FirstOrDefault(a => a.Key.Key == model.GetType() && a.Key.Value == prop.PropertyType.GetTypeOfT());
-
-            //    if (relateIds.Value.Value != null && relateIds.Value.Value.Length > 1)
-            //        foreach (object val in relateIds.Value.Value)
-            //            InsertRelationship(relateIds.Key.Key, relateIds.Key.Value, (int)val, (int)relateIds.Value.Key);
-            //}
-
-
             return id;
         }
 
@@ -2430,6 +2418,8 @@ namespace NostreetsORM
             IEnumerable<object> result = GetAll();
             if (result != null)
                 result = result.Where(predicate);
+            else
+                result = new List<object>();
 
             return result;
         }
@@ -2463,8 +2453,8 @@ namespace NostreetsORM
 
         public List<T> GetAll()
         {
-            List<T> result = null;
             Type listType = null;
+            List<T> result = null;
             List<object> list = _baseSrv.GetAll();
 
             if (list != null)
@@ -2475,7 +2465,7 @@ namespace NostreetsORM
                 if (listType != typeof(T))
                     throw new Exception("objects in list are not the right Type of entity to access..");
 
-                if (result == null)
+                if (result.Count == 0)
                     result = list.Cast<T>().ToList();
                 //foreach (object item in list)
                 //    result.Add((T)item);
@@ -2512,6 +2502,8 @@ namespace NostreetsORM
             IEnumerable<T> result = GetAll();
             if (result != null)
                 result = result.Where(predicate);
+            else
+                result = new List<T>();
 
             return result;
         }
@@ -2611,6 +2603,8 @@ namespace NostreetsORM
             IEnumerable<T> result = GetAll();
             if (result != null)
                 result = result.Where(predicate);
+            else
+                result = new List<T>();
 
             return result;
         }
@@ -2703,6 +2697,8 @@ namespace NostreetsORM
             IEnumerable<T> result = GetAll();
             if (result != null)
                 result = result.Where(predicate);
+            else
+                result = new List<T>();
 
             return result;
         }
