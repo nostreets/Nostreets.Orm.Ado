@@ -2467,8 +2467,6 @@ namespace NostreetsORM
 
                 if (result.Count == 0)
                     result = list.Cast<T>().ToList();
-                //foreach (object item in list)
-                //    result.Add((T)item);
             }
 
             return result;
