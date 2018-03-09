@@ -271,7 +271,7 @@ namespace NostreetsORM
 
         private void SetUp()
         {
-            _partialProcs.Add("InsertWithNewIDProcedure", "CREATE Proc [dbo].[{0}_Insert] {1} As Begin Declare @NewId {2} Insert Into [dbo].{0}({3}) Values({4}) Set @NewId = SCOPE_IDENTITY() Select @NewId End");
+            _partialProcs.Add("InsertWithNewIDProcedure", "CREATE Proc [dbo].[{0}_Insert] {1} As Begin Declare @NewId {2} Insert Into [dbo].{0}({3}){5} Values({4}) Set @NewId = COALESCE(SCOPE_IDENTITY(), @@IDENTITY) {6} Select @NewId End");
             _partialProcs.Add("InsertWithIDProcedure", "CREATE Proc [dbo].[{0}_Insert] {1} As Begin Insert Into [dbo].{0}({2}) Values({3}) End");
             _partialProcs.Add("UpdateProcedure", "CREATE Proc [dbo].[{0}_Update] {1} As Begin {2} End");
             _partialProcs.Add("DeleteProcedure", "CREATE Proc [dbo].[{0}_Delete] @{1} {2} As Begin Delete {0} Where {1} = @{1} {3} End");
@@ -343,7 +343,7 @@ namespace NostreetsORM
                 result = false;
 
             return result;
-            
+
         }
 
         private int GetPKOrdinalOfType(Type type)
@@ -676,20 +676,47 @@ namespace NostreetsORM
             switch (template.Key)
             {
                 case "Insert":
-                    query = String.Format(template.Value, GetTableName(type), inputParams, DeterminSQLType(typeof(int)), columns, values);
+                    query = template.Value.FormatString(
+                                            GetTableName(type)
+                                            , inputParams
+                                            , DeterminSQLType(typeof(int))
+                                            , columns
+                                            , values
+                                            , ""
+                                            , ""
+                                            , "");
                     break;
 
                 case "Update":
-                    string innerQuery = String.Format(_partialProcs["NullCheckForUpdatePartial"], GetTableName(type), "SET Value = @Value WHERE " + GetTableName(type) + ".Id = @Id", "Value");
-                    query = String.Format(template.Value, GetTableName(type), " @Id INT, " + inputParams, innerQuery);
+                    string innerQuery = _partialProcs["NullCheckForUpdatePartial"] .FormatString(  
+                                                                    GetTableName(type)
+                                                                    , "SET Value = @Value WHERE " + GetTableName(type) + ".Id = @Id"
+                                                                    , "Value");
+
+                    query = template.Value.FormatString(
+                                            GetTableName(type)
+                                            , " @Id INT, " + inputParams
+                                            , innerQuery);
                     break;
 
                 case "SelectAll":
-                    query = String.Format(template.Value, GetTableName(type), select, "", "", "", "All");
+                    query = template.Value.FormatString(
+                                            GetTableName(type)
+                                            , select
+                                            , ""
+                                            , ""
+                                            , ""
+                                            , "All");
                     break;
 
                 case "SelectBy":
-                    query = String.Format(template.Value, GetTableName(type), select, "", "@Id " + DeterminSQLType(typeof(int)), "Where " + GetTableName(type) + ".Id = @Id", "ById");
+                    query = template.Value.FormatString(
+                                            GetTableName(type)
+                                            , select
+                                            , ""
+                                            , "@Id " + DeterminSQLType(typeof(int))
+                                            , "Where " + GetTableName(type) + ".Id = @Id"
+                                            , "ById");
                     break;
             }
 
@@ -779,7 +806,7 @@ namespace NostreetsORM
                     jns.Add(
                         "Inner Join " + GetTableName(props[i].PropertyType)
                         + " AS _" + props[i].Name
-                        + " On _" + props[i].Name + "." +
+                        + " ON _" + props[i].Name + "." +
                         (props[i].PropertyType.IsEnum || NeedsIdProp(props[i].PropertyType)
                             ? "Id"
                             : GetPKOfTable(props[i].PropertyType))
@@ -812,7 +839,16 @@ namespace NostreetsORM
             switch (template.Key)
             {
                 case "Insert":
-                    query = String.Format(template.Value, GetTableName(type), inputParams, DeterminSQLType(props[pkOrdinal].PropertyType), columns, values);
+                    query = template.Value.FormatString(
+                                            GetTableName(type)
+                                            , inputParams
+                                            , DeterminSQLType(props[pkOrdinal].PropertyType) +
+                                                ((props[pkOrdinal].PropertyType != typeof(string)) ? "" : "DECLARE @OUT TABLE (ID NVARCHAR(128)) ")
+                                            , columns
+                                            , values
+                                            , (props[pkOrdinal].PropertyType != typeof(string)) ? "" : "OUTPUT INSERTED.ID INTO @OUT(ID) "
+                                            , (props[pkOrdinal].PropertyType != typeof(string)) ? "" : " IF @NewId IS NULL BEGIN SET @NewId = (SELECT TOP (1) ID FROM @OUT) END "
+                              );
                     break;
 
                 case "Update":
@@ -826,22 +862,44 @@ namespace NostreetsORM
                             continue;
                         }
 
-                        innerQuery += String.Format(_partialProcs["NullCheckForUpdatePartial"], GetTableName(type), innerUpdt[x], props[i].Name);
+                        innerQuery += _partialProcs["NullCheckForUpdatePartial"].FormatString(
+                                            GetTableName(type)
+                                            , innerUpdt[x]
+                                            , props[i].Name);
                     }
 
-                    query = String.Format(template.Value, GetTableName(type), "@{0} INT, ".FormatString(props[pkOrdinal].Name) + inputParams, innerQuery);
+                    query = template.Value.FormatString(
+                                            GetTableName(type)
+                                            , "@{0} INT, ".FormatString(props[pkOrdinal].Name) + inputParams
+                                            , innerQuery);
                     break;
 
                 case "SelectAll":
-                    query = String.Format(template.Value, GetTableName(type), select, joins, "", "", "All");
+                    query = template.Value.FormatString(
+                                            GetTableName(type)
+                                            , select
+                                            , joins
+                                            , ""
+                                            , ""
+                                            , "All");
                     break;
 
                 case "SelectBy":
-                    query = String.Format(template.Value, GetTableName(type), select, joins, '@' + props[pkOrdinal].Name + " " + DeterminSQLType(props[pkOrdinal].PropertyType), "Where " + GetTableName(type) + '.' + props[pkOrdinal].Name + " = @" + props[pkOrdinal].Name, "ById");
+                    query = template.Value.FormatString(
+                                            GetTableName(type)
+                                            , select
+                                            , joins
+                                            , '@' + props[pkOrdinal].Name + " " + DeterminSQLType(props[pkOrdinal].PropertyType)
+                                            , "WHERE " + GetTableName(type) + '.' + props[pkOrdinal].Name + " = @" + props[pkOrdinal].Name
+                                            , "ById");
                     break;
 
                 case "Delete":
-                    query = String.Format(template.Value, GetTableName(type), props[pkOrdinal].Name, DeterminSQLType(props[pkOrdinal].PropertyType), "");
+                    query = template.Value.FormatString(
+                                            GetTableName(type)
+                                            , props[pkOrdinal].Name
+                                            , DeterminSQLType(props[pkOrdinal].PropertyType)
+                                            , "");
                     break;
             }
 
@@ -1067,7 +1125,7 @@ namespace NostreetsORM
                 catch (Exception ex)
                 {
                     DropBackupTable(type, prefix);
-                    throw ex;
+                    ex.Message.Log();
                 }
 
             }
@@ -1258,7 +1316,6 @@ namespace NostreetsORM
                         continue;
 
                     query = GetProcsForClass(type, template);
-
                 }
 
 
@@ -2296,8 +2353,12 @@ namespace NostreetsORM
                     if (ShouldNormalize(prop.PropertyType) && !prop.PropertyType.IsEnum)
                     {
                         object rowOfProp = tblEntities[propPair]
-                                             .FirstOrDefault(a => a.GetPropertyValue((NeedsIdProp(prop.PropertyType)) ? "Id" : prop.PropertyType.GetProperties()[pkOrdinal].Name)
-                                             .Equals(tblOfType.GetPropertyValue(prop.Name + "Id")));
+                                             .FirstOrDefault(
+                                                a => a.GetPropertyValue((NeedsIdProp(prop.PropertyType))
+                                                        ? "Id"
+                                                        : prop.PropertyType.GetProperties()[GetPKOrdinalOfType(prop.PropertyType)].Name)
+                                                    .Equals(tblOfType.GetPropertyValue(prop.Name + "Id"))
+                                             );
 
                         object property = InstantateFromIds(propPair, rowOfProp, tblEntities);
 
@@ -2414,6 +2475,8 @@ namespace NostreetsORM
         {
             //using (DataContext context = DBContext())
             //    DbCommand cmd = context.GetCommand(((IEnumerable<object>)context.GetTable(_type)).Where(predicate).AsQueryable());
+
+            predicate.TranlateToSQL().Log();
 
             IEnumerable<object> result = GetAll();
             if (result != null)
