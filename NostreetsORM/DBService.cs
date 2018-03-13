@@ -1112,7 +1112,7 @@ namespace NostreetsORM
                 {
                     _lastQueryExcuted = query;
 
-                    DataProvider.ExecuteCmd(() => Connection,
+                    Instance.ExecuteCmd(() => Connection,
                                query,
                                 null,
                                 (reader, set) =>
@@ -1140,7 +1140,7 @@ namespace NostreetsORM
             var fields = type.GetFields();
             for (int i = 1; i < fields.Length; i++)
             {
-                DataProvider.ExecuteNonQuery(() => Connection,
+                Instance.ExecuteNonQuery(() => Connection,
                                 "dbo." + GetTableName(type) + "_Insert",
                                 (param) => param.Add(new SqlParameter("Value", fields[i].Name)),
                                 null);
@@ -1168,7 +1168,7 @@ namespace NostreetsORM
 
                     _lastQueryExcuted = query;
 
-                    DataProvider.ExecuteCmd(() => Connection,
+                    Instance.ExecuteCmd(() => Connection,
                        query,
                         null,
                         (reader, set) =>
@@ -1241,7 +1241,7 @@ namespace NostreetsORM
 
                         _lastQueryExcuted = query;
 
-                        DataProvider.ExecuteCmd(() => Connection,
+                        Instance.ExecuteCmd(() => Connection,
                               query,
                                null,
                                (reader, set) =>
@@ -1273,7 +1273,7 @@ namespace NostreetsORM
 
                 _lastQueryExcuted = query;
 
-                DataProvider.ExecuteCmd(() => Connection,
+                Instance.ExecuteCmd(() => Connection,
                    query,
                     null,
                     (reader, set) =>
@@ -1321,7 +1321,7 @@ namespace NostreetsORM
 
                 _lastQueryExcuted = query;
 
-                DataProvider.ExecuteCmd(() => Connection,
+                Instance.ExecuteCmd(() => Connection,
                    query,
                     null,
                     (reader, set) =>
@@ -1344,7 +1344,7 @@ namespace NostreetsORM
 
                 _lastQueryExcuted = query;
 
-                DataProvider.ExecuteCmd(() => Connection,
+                Instance.ExecuteCmd(() => Connection,
                    query,
                     null,
                     (reader, set) =>
@@ -1370,7 +1370,7 @@ namespace NostreetsORM
 
                     _lastQueryExcuted = query;
 
-                    DataProvider.ExecuteCmd(() => Connection,
+                    Instance.ExecuteCmd(() => Connection,
                        query,
                         null,
                         (reader, set) =>
@@ -1395,7 +1395,7 @@ namespace NostreetsORM
 
                 _lastQueryExcuted = query;
 
-                DataProvider.ExecuteCmd(() => Connection,
+                Instance.ExecuteCmd(() => Connection,
                    query,
                     null,
                     (reader, set) =>
@@ -1426,7 +1426,7 @@ namespace NostreetsORM
 
                 _lastQueryExcuted = query;
 
-                DataProvider.ExecuteCmd(() => Connection,
+                Instance.ExecuteCmd(() => Connection,
                    query,
                     null,
                     (reader, set) =>
@@ -1448,7 +1448,7 @@ namespace NostreetsORM
 
             _lastQueryExcuted = query;
 
-            DataProvider.ExecuteCmd(() => Connection,
+            Instance.ExecuteCmd(() => Connection,
                query,
                 null,
                 (reader, set) =>
@@ -1472,7 +1472,7 @@ namespace NostreetsORM
                                     dbEnums = null;
             _lastQueryExcuted = query;
 
-            DataProvider.ExecuteCmd(() => Connection, query, null,
+            Instance.ExecuteCmd(() => Connection, query, null,
                 (reader, set) =>
                 {
                     if (dbEnums == null)
@@ -1500,7 +1500,7 @@ namespace NostreetsORM
             {
                 if (ShouldNormalize(type))
                 {
-                    List<string> columnsInTable = DataProvider.GetSchema(() => Connection, GetTableName(type));
+                    List<string> columnsInTable = Instance.GetSchema(() => Connection, GetTableName(type));
                     List<PropertyInfo> baseProps = type.GetProperties().ToList();
 
 
@@ -1579,7 +1579,7 @@ namespace NostreetsORM
             List<string> list = null;
             _lastQueryExcuted = query;
 
-            DataProvider.ExecuteCmd(() => Connection,
+            Instance.ExecuteCmd(() => Connection,
                query,
                 null,
                 (reader, set) =>
@@ -1603,7 +1603,7 @@ namespace NostreetsORM
             _lastQueryExcuted = query;
 
             int isTrue = 0;
-            DataProvider.ExecuteCmd(() => Connection,
+            Instance.ExecuteCmd(() => Connection,
                query,
                 null,
                 (reader, set) =>
@@ -1624,7 +1624,7 @@ namespace NostreetsORM
             _lastQueryExcuted = query;
 
             int isTrue = 0;
-            DataProvider.ExecuteCmd(() => Connection,
+            Instance.ExecuteCmd(() => Connection,
                query,
                 null,
                 (reader, set) =>
@@ -1653,7 +1653,7 @@ namespace NostreetsORM
             KeyValuePair<string, Type> key = new KeyValuePair<string, Type>(GetTableName(type, prefix), type);
 
             _lastQueryExcuted = "dbo." + key.Key + "_SelectAll";
-            DataProvider.ExecuteCmd(() => Connection, "dbo." + key.Key + "_SelectAll",
+            Instance.ExecuteCmd(() => Connection, "dbo." + key.Key + "_SelectAll",
                 null,
                 (reader, set) =>
                 {
@@ -1709,7 +1709,7 @@ namespace NostreetsORM
 
             _lastQueryExcuted = "dbo." + GetTableName(type) + "_SelectById";
 
-            DataProvider.ExecuteCmd(() => Connection, "dbo." + GetTableName(type) + "_SelectById",
+            Instance.ExecuteCmd(() => Connection, "dbo." + GetTableName(type) + "_SelectById",
                 param => param.Add(new SqlParameter((!type.IsEnum && !NeedsIdProp(type)) ? type.GetProperties()[pkOrdinal].Name : "Id", id)),
                 (reader, set) =>
                 {
@@ -1733,7 +1733,7 @@ namespace NostreetsORM
 
             _lastQueryExcuted = "dbo." + GetTableName(type) + "_SelectById";
 
-            DataProvider.ExecuteCmd(() => Connection, "dbo." + GetTableName(type) + "_SelectById",
+            Instance.ExecuteCmd(() => Connection, "dbo." + GetTableName(type) + "_SelectById",
                 param => param.Add(new SqlParameter((!type.IsEnum && !NeedsIdProp(type)) ? type.GetProperties()[pkOrdinal].Name : "Id", id)),
                 (reader, set) =>
                 {
@@ -1749,7 +1749,7 @@ namespace NostreetsORM
 
             _lastQueryExcuted = "dbo." + GetTableName(type) + "_Delete";
 
-            DataProvider.ExecuteNonQuery(() => Connection, "dbo." + GetTableName(type) + "_Delete",
+            Instance.ExecuteNonQuery(() => Connection, "dbo." + GetTableName(type) + "_Delete",
                param => param.Add(new SqlParameter((NeedsIdProp(type)) ? "Id" : type.GetProperties()[pkOrdinal].Name, id)));
 
 
@@ -1856,7 +1856,7 @@ namespace NostreetsORM
 
             _lastQueryExcuted = "dbo." + GetTableName(type) + "_Insert";
 
-            DataProvider.ExecuteCmd(() => Connection, "dbo." + GetTableName(type) + "_Insert",
+            Instance.ExecuteCmd(() => Connection, "dbo." + GetTableName(type) + "_Insert",
                        param =>
                        {
                            PropertyInfo[] props = type.GetProperties();
@@ -1912,7 +1912,7 @@ namespace NostreetsORM
 
             _lastQueryExcuted = "dbo." + GetTableName(type) + "_SelectById";
 
-            DataProvider.ExecuteCmd(() => Connection, "dbo." + GetTableName(type) + "_SelectById",
+            Instance.ExecuteCmd(() => Connection, "dbo." + GetTableName(type) + "_SelectById",
                 param => param.Add(new SqlParameter((!type.IsEnum && !NeedsIdProp(type)) ? type.GetProperties()[pkOrdinal].Name : "Id", id)),
                 (reader, set) =>
                 {
@@ -1922,7 +1922,7 @@ namespace NostreetsORM
 
             _lastQueryExcuted = "dbo." + GetTableName(type) + "_Update";
 
-            DataProvider.ExecuteNonQuery(() => Connection, "dbo." + GetTableName(type) + "_Update",
+            Instance.ExecuteNonQuery(() => Connection, "dbo." + GetTableName(type) + "_Update",
                       param =>
                       {
                           PropertyInfo[] props = type.GetProperties();
@@ -2017,7 +2017,7 @@ namespace NostreetsORM
 
             _lastQueryExcuted = "dbo." + collectionTbl + "_Insert";
 
-            DataProvider.ExecuteNonQuery(() => Connection, "dbo." + collectionTbl + "_Insert",
+            Instance.ExecuteNonQuery(() => Connection, "dbo." + collectionTbl + "_Insert",
                    param =>
                    {
                        for (int i = 0; i < 2; i++)
@@ -2042,7 +2042,7 @@ namespace NostreetsORM
 
             _lastQueryExcuted = "dbo." + collectionTbl + "_Insert";
 
-            DataProvider.ExecuteNonQuery(() => Connection, "dbo." + collectionTbl + "_Insert",
+            Instance.ExecuteNonQuery(() => Connection, "dbo." + collectionTbl + "_Insert",
                    param =>
                    {
                        for (int i = 0; i < 2; i++)
@@ -2072,7 +2072,7 @@ namespace NostreetsORM
 
             _lastQueryExcuted = query;
 
-            DataProvider.ExecuteNonQuery(
+            Instance.ExecuteNonQuery(
                     () => Connection
                    , query
                    , null
@@ -2098,7 +2098,7 @@ namespace NostreetsORM
 
             _lastQueryExcuted = query;
 
-            DataProvider.ExecuteCmd(
+            Instance.ExecuteCmd(
                         () => Connection
                        , query
                        , null
@@ -2125,7 +2125,7 @@ namespace NostreetsORM
 
             _lastQueryExcuted = query;
 
-            DataProvider.ExecuteNonQuery(() => Connection, query,
+            Instance.ExecuteNonQuery(() => Connection, query,
                    null, null, cmd => cmd.CommandType = CommandType.Text, null);
 
             Delete(child, childId);
@@ -2146,7 +2146,7 @@ namespace NostreetsORM
 
                 _lastQueryExcuted = query;
 
-                DataProvider.ExecuteCmd(() => Connection, query, null,
+                Instance.ExecuteCmd(() => Connection, query, null,
                     (reader, set) =>
                     {
                         object tableObj = tableType.Instantiate();
@@ -2190,7 +2190,7 @@ namespace NostreetsORM
 
             _lastQueryExcuted = query;
 
-            DataProvider.ExecuteCmd(() => Connection, query, null,
+            Instance.ExecuteCmd(() => Connection, query, null,
                 (reader, set) =>
                 {
                     object tableObj = tableType.Instantiate();
@@ -2222,7 +2222,7 @@ namespace NostreetsORM
 
             _lastQueryExcuted = query;
 
-            DataProvider.ExecuteCmd(() => Connection, query,
+            Instance.ExecuteCmd(() => Connection, query,
                        null,
                        (reader, set) =>
                        {
@@ -2255,7 +2255,7 @@ namespace NostreetsORM
 
             _lastQueryExcuted = query;
 
-            DataProvider.ExecuteCmd(() => Connection, query,
+            Instance.ExecuteCmd(() => Connection, query,
                 null,
                 (reader, set) =>
                 {
@@ -2285,7 +2285,7 @@ namespace NostreetsORM
 
             _lastQueryExcuted = query;
 
-            DataProvider.ExecuteCmd(() => Connection, query,
+            Instance.ExecuteCmd(() => Connection, query,
                        null,
                        (reader, set) =>
                        {
@@ -2476,7 +2476,7 @@ namespace NostreetsORM
             //using (DataContext context = DBContext())
             //    DbCommand cmd = context.GetCommand(((IEnumerable<object>)context.GetTable(_type)).Where(predicate).AsQueryable());
 
-            predicate.TranlateToSQL().Log();
+            QueryProvider.GetQueryText(predicate.ToExpression()).Log();
 
             IEnumerable<object> result = GetAll();
             if (result != null)
@@ -2560,6 +2560,8 @@ namespace NostreetsORM
 
         public IEnumerable<T> Where(Func<T, bool> predicate)
         {
+            _baseSrv.QueryProvider.GetQueryText(predicate.ToExpression()).Log();
+
             IEnumerable<T> result = GetAll();
             if (result != null)
                 result = result.Where(predicate);
@@ -2661,6 +2663,8 @@ namespace NostreetsORM
 
         public IEnumerable<T> Where(Func<T, bool> predicate)
         {
+            _baseSrv.QueryProvider.GetQueryText(predicate.ToExpression()).Log();
+
             IEnumerable<T> result = GetAll();
             if (result != null)
                 result = result.Where(predicate);
@@ -2755,6 +2759,8 @@ namespace NostreetsORM
 
         public IEnumerable<T> Where(Func<T, bool> predicate)
         {
+            _baseSrv.QueryProvider.GetQueryText(predicate.ToExpression()).Log();
+
             IEnumerable<T> result = GetAll();
             if (result != null)
                 result = result.Where(predicate);
