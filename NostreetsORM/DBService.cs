@@ -2,19 +2,15 @@
 using System.Collections.Generic;
 using System.Data;
 using System.Data.SqlClient;
-using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Web;
 using System.ComponentModel.DataAnnotations.Schema;
+using Provider = NostreetsExtensions.Helpers.QueryProvider;
 using NostreetsExtensions.Helpers;
 using NostreetsExtensions.Interfaces;
 using NostreetsExtensions;
 using System.Collections;
 using NostreetsExtensions.Utilities;
-using System.Data.Common;
-using System.Data.Linq;
-using System.Linq.Expressions;
 using Newtonsoft.Json;
 using System.ComponentModel.DataAnnotations;
 
@@ -26,48 +22,7 @@ namespace NostreetsORM
         {
             try
             {
-                if (NeedsIdProp(type))
-                    throw new Exception("type's first public property needs to be an type of int or Guid named Id to be managed by DBService...");
-
-                if (!ShouldNormalize(type))
-                    throw new Exception("type's needs to be a custom class to be managed by DBService...");
-
-                _type = type;
-                _partialProcs = new Dictionary<string, string>();
-                _propertiesIngored = new Dictionary<Type, PropertyInfo[]>();
-
-                SetUp();
-                _procTemplates = new Dictionary<string, string>
-                {
-                    { "Insert",  _partialProcs["InsertWithNewIDProcedure"]},
-                    { "InsertWithID",  _partialProcs["InsertWithIDProcedure"]},
-                    { "Update",  _partialProcs["UpdateProcedure"]},
-                    { "SelectAll",  _partialProcs["SelectProcedure"]},
-                    { "SelectBy",  _partialProcs["SelectProcedure"]},
-                    { "Delete",  _partialProcs["DeleteProcedure"]}
-
-                };
-
-                bool doesExist = CheckIfTableExist(_type),
-                     isCurrent = TablesAccessed.All(a => CheckIfTypeIsCurrent(a.Key));
-
-                if (!doesExist)
-                {
-                    DeleteCreationScraps();
-                    CreateTable(_type);
-                }
-                else if (!isCurrent)
-                {
-                    KeyValuePair<Type, Type[]>[] tablesToUpdate = TablesAccessed.Where(a => !CheckIfTypeIsCurrent(a.Key)).ToArray();
-
-                    foreach (KeyValuePair<Type, Type[]> tbl in tablesToUpdate)
-                        BackupAndDropType(tbl.Key);
-
-                    CreateTable(_type);
-
-                    foreach (KeyValuePair<Type, Type[]> tbl in tablesToUpdate)
-                        UpdateTableFromBackup(tbl.Key);
-                }
+                SetUp(type, false);
             }
             catch (Exception ex)
             {
@@ -80,49 +35,7 @@ namespace NostreetsORM
         {
             try
             {
-                if (NeedsIdProp(type))
-                    throw new Exception("type's first public property needs to be an type of int or Guid named Id to be managed by DBService...");
-
-                if (!ShouldNormalize(type))
-                    throw new Exception("type's needs to be a custom class to be managed by DBService...");
-
-                _type = type;
-                _partialProcs = new Dictionary<string, string>();
-                _propertiesIngored = new Dictionary<Type, PropertyInfo[]>();
-
-                SetUp();
-                _procTemplates = new Dictionary<string, string>
-                {
-                    { "Insert",  _partialProcs["InsertWithNewIDProcedure"]},
-                    { "InsertWithID",  _partialProcs["InsertWithIDProcedure"]},
-                    { "Update",  _partialProcs["UpdateProcedure"]},
-                    { "SelectAll",  _partialProcs["SelectProcedure"]},
-                    { "SelectBy",  _partialProcs["SelectProcedure"]},
-                    { "Delete",  _partialProcs["DeleteProcedure"]}
-
-                };
-
-
-                bool doesExist = CheckIfTableExist(_type),
-                     isCurrent = TablesAccessed.All(a => CheckIfTypeIsCurrent(a.Key));
-
-                if (!doesExist)
-                {
-                    DeleteCreationScraps();
-                    CreateTable(_type);
-                }
-                else if (!isCurrent)
-                {
-                    KeyValuePair<Type, Type[]>[] tablesToUpdate = TablesAccessed.Where(a => !CheckIfTypeIsCurrent(a.Key)).ToArray();
-
-                    foreach (KeyValuePair<Type, Type[]> tbl in tablesToUpdate)
-                        BackupAndDropType(tbl.Key);
-
-                    CreateTable(_type);
-
-                    foreach (KeyValuePair<Type, Type[]> tbl in tablesToUpdate)
-                        UpdateTableFromBackup(tbl.Key);
-                }
+                SetUp(type, false);
             }
             catch (Exception ex)
             {
@@ -134,49 +47,7 @@ namespace NostreetsORM
         {
             try
             {
-                if (NeedsIdProp(type))
-                    throw new Exception("type's first public property needs to be an type of int or Guid named Id to be managed by DBService...");
-
-                if (!ShouldNormalize(type))
-                    throw new Exception("type's needs to be a custom class to be managed by DBService...");
-
-                _type = type;
-                _nullLock = nullLock;
-                _partialProcs = new Dictionary<string, string>();
-                _propertiesIngored = new Dictionary<Type, PropertyInfo[]>();
-
-                SetUp();
-                _procTemplates = new Dictionary<string, string>
-                {
-                    { "Insert",  _partialProcs["InsertWithNewIDProcedure"]},
-                    { "InsertWithID",  _partialProcs["InsertWithIDProcedure"]},
-                    { "Update",  _partialProcs["UpdateProcedure"]},
-                    { "SelectAll",  _partialProcs["SelectProcedure"]},
-                    { "SelectBy",  _partialProcs["SelectProcedure"]},
-                    { "Delete",  _partialProcs["DeleteProcedure"]}
-
-                };
-
-                bool doesExist = CheckIfTableExist(_type),
-                     isCurrent = TablesAccessed.All(a => CheckIfTypeIsCurrent(a.Key));
-
-                if (!doesExist)
-                {
-                    DeleteCreationScraps();
-                    CreateTable(_type);
-                }
-                else if (!isCurrent)
-                {
-                    KeyValuePair<Type, Type[]>[] tablesToUpdate = TablesAccessed.Where(a => !CheckIfTypeIsCurrent(a.Key)).ToArray();
-
-                    foreach (KeyValuePair<Type, Type[]> tbl in tablesToUpdate)
-                        BackupAndDropType(tbl.Key);
-
-                    CreateTable(_type);
-
-                    foreach (KeyValuePair<Type, Type[]> tbl in tablesToUpdate)
-                        UpdateTableFromBackup(tbl.Key);
-                }
+                SetUp(type, nullLock);
             }
             catch (Exception ex)
             {
@@ -187,60 +58,16 @@ namespace NostreetsORM
 
         public DBService(Type type, string connectionKey, bool nullLock) : base(connectionKey)
         {
-
             try
             {
-                if (NeedsIdProp(type))
-                    throw new Exception("type's first public property needs to be an type of int or Guid named Id to be managed by DBService...");
-
-                if (!ShouldNormalize(type))
-                    throw new Exception("type's needs to be a custom class to be managed by DBService...");
-
-
-                _type = type;
-                _nullLock = nullLock;
-                _partialProcs = new Dictionary<string, string>();
-                _propertiesIngored = new Dictionary<Type, PropertyInfo[]>();
-
-                SetUp();
-                _procTemplates = new Dictionary<string, string>
-                {
-                    { "Insert",  _partialProcs["InsertWithNewIDProcedure"]},
-                    { "InsertWithID",  _partialProcs["InsertWithIDProcedure"]},
-                    { "Update",  _partialProcs["UpdateProcedure"]},
-                    { "SelectAll",  _partialProcs["SelectProcedure"]},
-                    { "SelectBy",  _partialProcs["SelectProcedure"]},
-                    { "Delete",  _partialProcs["DeleteProcedure"]}
-
-                };
-
-                bool doesExist = CheckIfTableExist(_type),
-                     isCurrent = TablesAccessed.All(a => CheckIfTypeIsCurrent(a.Key));
-
-                if (!doesExist)
-                {
-                    DeleteCreationScraps();
-                    CreateTable(_type);
-                }
-                else if (!isCurrent)
-                {
-                    KeyValuePair<Type, Type[]>[] tablesToUpdate = TablesAccessed.Where(a => !CheckIfTypeIsCurrent(a.Key)).ToArray();
-
-                    foreach (KeyValuePair<Type, Type[]> tbl in tablesToUpdate)
-                        BackupAndDropType(tbl.Key);
-
-                    CreateTable(_type);
-
-                    foreach (KeyValuePair<Type, Type[]> tbl in tablesToUpdate)
-                        UpdateTableFromBackup(tbl.Key);
-                }
+                SetUp(type, nullLock);
             }
             catch (Exception ex)
             {
-
                 throw ex;
             }
         }
+
 
         public Dictionary<Type, Type[]> TablesAccessed
         {
@@ -252,11 +79,10 @@ namespace NostreetsORM
             }
         }
 
-        public Dictionary<Type, PropertyInfo[]> PropertiesIngored { get => _propertiesIngored; }
-
+        public Dictionary<Type, PropertyInfo[]> PropertiesIngored => _propertiesIngored;
         public Dictionary<string, string> ProcTemplates { get => _procTemplates; }
-
         public string LastQueryExcuted { get => _lastQueryExcuted; set => _lastQueryExcuted = value; }
+
 
         private bool _tableCreation = false,
                      _nullLock = false;
@@ -267,10 +93,63 @@ namespace NostreetsORM
         private Dictionary<Type, PropertyInfo[]> _propertiesIngored = null;
         private string _lastQueryExcuted = null;
 
-        #region Internal Logic
 
-        private void SetUp()
+        #region Internal Logic
+        private void SetUp(Type type, bool nullLock)
         {
+            if (NeedsIdProp(type))
+                throw new Exception("type's first public property needs to be an type of int or Guid named Id to be managed by DBService...");
+
+            if (!ShouldNormalize(type))
+                throw new Exception("type's needs to be a custom class to be managed by DBService...");
+
+            SetUpQueries();
+
+            _type = type;
+            _nullLock = nullLock;
+            _propertiesIngored = new Dictionary<Type, PropertyInfo[]>();
+
+
+            QueryProvider = Provider.SqlQueryProvider.Create(Connection, MapTypeWithAttributes(type).Name);
+
+
+
+            bool doesExist = CheckIfTableExist(_type), isCurrent = TablesAccessed.All(a => CheckIfTypeIsCurrent(a.Key));
+            _procTemplates = new Dictionary<string, string>
+                {
+                    { "Insert",  _partialProcs["InsertWithNewIDProcedure"]},
+                    { "InsertWithID",  _partialProcs["InsertWithIDProcedure"]},
+                    { "Update",  _partialProcs["UpdateProcedure"]},
+                    { "SelectAll",  _partialProcs["SelectProcedure"]},
+                    { "SelectBy",  _partialProcs["SelectProcedure"]},
+                    { "Delete",  _partialProcs["DeleteProcedure"]}
+
+                };
+
+            if (!doesExist)
+            {
+                DeleteCreationScraps();
+                CreateTable(_type);
+            }
+            else if (!isCurrent)
+            {
+                KeyValuePair<Type, Type[]>[] tablesToUpdate = TablesAccessed.Where(a => !CheckIfTypeIsCurrent(a.Key)).ToArray();
+
+                foreach (KeyValuePair<Type, Type[]> tbl in tablesToUpdate)
+                    BackupAndDropType(tbl.Key);
+
+                CreateTable(_type);
+
+                foreach (KeyValuePair<Type, Type[]> tbl in tablesToUpdate)
+                    UpdateTableFromBackup(tbl.Key);
+            }
+        }
+
+        private void SetUpQueries()
+        {
+            if (_partialProcs == null)
+                _partialProcs = new Dictionary<string, string>();
+
             _partialProcs.Add("InsertWithNewIDProcedure", "CREATE Proc [dbo].[{0}_Insert] {1} As Begin Declare @NewId {2} Insert Into [dbo].{0}({3}){5} Values({4}) Set @NewId = COALESCE(SCOPE_IDENTITY(), @@IDENTITY) {6} Select @NewId End");
             _partialProcs.Add("InsertWithIDProcedure", "CREATE Proc [dbo].[{0}_Insert] {1} As Begin Insert Into [dbo].{0}({2}) Values({3}) End");
             _partialProcs.Add("UpdateProcedure", "CREATE Proc [dbo].[{0}_Update] {1} As Begin {2} End");
@@ -312,10 +191,39 @@ namespace NostreetsORM
 
         }
 
+        private Type MapTypeWithAttributes(Type type)
+        {
+            PropertyInfo[] props = type.GetProperties();
+
+            Func<Tuple<string, Type, object[]>[]> func =
+                () =>
+                {
+                    List<Tuple<string, Type, object[]>> result = new List<Tuple<string, Type, object[]>>
+                        {
+                            new Tuple<string, Type, object[]>(
+                                "Table", typeof(Provider.TableAttribute), new[] { GetTableName(type) })
+                        };
+
+                    foreach (PropertyInfo prop in props)
+                    {
+                        result.Add(new Tuple<string, Type, object[]>(
+                                    "Table", typeof(Provider.ColumnAttribute), new[] { (object)prop.Name, (prop == props[GetPKOrdinalOfType(type)]) ? true : false }));
+
+                        if (ShouldNormalize(prop.PropertyType))
+                            result.Add(new Tuple<string, Type, object[]>(
+                                       "Table", typeof(Provider.AssociationAttribute), new[] { prop.Name + "Id", GetPKOfTable(prop.PropertyType), prop.Name }));
+
+                    }
+                    return result.ToArray();
+                };
+
+            Type propType = type.IntoGenericAsT(typeof(Provider.IEntityTable<>));
+
+            return ClassBuilder.CreateType("MapContainer", new[] { "Table" }, new[] { propType }, func());
+        }
+
         private bool ShouldNormalize(Type type)
         {
-            //return ((type != typeof(String) && type != typeof(Char)) && (!type.IsSystemType() || type.IsCollection() && !type.GetTypeOfT().IsSystemType()) && (type.BaseType == typeof(Enum) || type.IsClass)) ? true : false;
-
             return (type.IsSystemType())
                   ? false
                   : (type.IsCollection())
@@ -486,7 +394,7 @@ namespace NostreetsORM
         {
             Type[] result = null;
             List<Type> list = null;
-            List<PropertyInfo> relations = type.GetProperties().Where(a => ShouldNormalize(a.PropertyType) || a.PropertyType.IsCollection() /*&& !a.PropertyType.GetTypeOfT().IsSystemType())*/).ToList();
+            List<PropertyInfo> relations = type.GetProperties().Where(a => ShouldNormalize(a.PropertyType) || a.PropertyType.IsCollection()).ToList();
 
             if (relations != null && relations.Count > 0)
             {
@@ -688,7 +596,7 @@ namespace NostreetsORM
                     break;
 
                 case "Update":
-                    string innerQuery = _partialProcs["NullCheckForUpdatePartial"] .FormatString(  
+                    string innerQuery = _partialProcs["NullCheckForUpdatePartial"].FormatString(
                                                                     GetTableName(type)
                                                                     , "SET Value = @Value WHERE " + GetTableName(type) + ".Id = @Id"
                                                                     , "Value");
@@ -2473,11 +2381,6 @@ namespace NostreetsORM
 
         public IEnumerable<object> Where(Func<object, bool> predicate)
         {
-            //using (DataContext context = DBContext())
-            //    DbCommand cmd = context.GetCommand(((IEnumerable<object>)context.GetTable(_type)).Where(predicate).AsQueryable());
-
-            QueryProvider.GetQueryText(predicate.ToExpression()).Log();
-
             IEnumerable<object> result = GetAll();
             if (result != null)
                 result = result.Where(predicate);
@@ -2560,8 +2463,6 @@ namespace NostreetsORM
 
         public IEnumerable<T> Where(Func<T, bool> predicate)
         {
-            _baseSrv.QueryProvider.GetQueryText(predicate.ToExpression()).Log();
-
             IEnumerable<T> result = GetAll();
             if (result != null)
                 result = result.Where(predicate);
@@ -2663,8 +2564,6 @@ namespace NostreetsORM
 
         public IEnumerable<T> Where(Func<T, bool> predicate)
         {
-            _baseSrv.QueryProvider.GetQueryText(predicate.ToExpression()).Log();
-
             IEnumerable<T> result = GetAll();
             if (result != null)
                 result = result.Where(predicate);
@@ -2759,8 +2658,6 @@ namespace NostreetsORM
 
         public IEnumerable<T> Where(Func<T, bool> predicate)
         {
-            _baseSrv.QueryProvider.GetQueryText(predicate.ToExpression()).Log();
-
             IEnumerable<T> result = GetAll();
             if (result != null)
                 result = result.Where(predicate);
