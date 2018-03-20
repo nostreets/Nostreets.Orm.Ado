@@ -13,6 +13,10 @@ using System.Collections;
 using NostreetsExtensions.Utilities;
 using Newtonsoft.Json;
 using System.ComponentModel.DataAnnotations;
+using Remotion.Linq;
+using Remotion.Linq.Parsing.Structure;
+using NostreetsExtensions.Helpers.QueryProvider;
+using System.Linq.Expressions;
 
 namespace NostreetsORM
 {
@@ -109,9 +113,8 @@ namespace NostreetsORM
             _nullLock = nullLock;
             _propertiesIngored = new Dictionary<Type, PropertyInfo[]>();
 
-
-            QueryProvider = Provider.SqlQueryProvider.Create(Connection, MapTypeWithAttributes(type).Name);
-
+            //MapAllTypes().Log();
+            //QueryProvider = new SqlQueryProvider(Connection, XmlMapping.FromXml(MapAllTypes()), QueryPolicy.Default);
 
 
             bool doesExist = CheckIfTableExist(_type), isCurrent = TablesAccessed.All(a => CheckIfTypeIsCurrent(a.Key));
@@ -191,36 +194,115 @@ namespace NostreetsORM
 
         }
 
-        private Type MapTypeWithAttributes(Type type)
+        private string MapAllTypes()
         {
-            PropertyInfo[] props = type.GetProperties();
 
-            Func<Tuple<string, Type, object[]>[]> func =
-                () =>
-                {
-                    List<Tuple<string, Type, object[]>> result = new List<Tuple<string, Type, object[]>>
-                        {
-                            new Tuple<string, Type, object[]>(
-                                "Table", typeof(Provider.TableAttribute), new[] { GetTableName(type) })
-                        };
+            List<EntityMap> result = new List<EntityMap>();
 
-                    foreach (PropertyInfo prop in props)
-                    {
-                        result.Add(new Tuple<string, Type, object[]>(
-                                    "Table", typeof(Provider.ColumnAttribute), new[] { (object)prop.Name, (prop == props[GetPKOrdinalOfType(type)]) ? true : false }));
+            //foreach (Type tbl in GetRelationships(_type))
+            //    MapType(tbl, ref result);
+            MapType(_type, ref result);
 
-                        if (ShouldNormalize(prop.PropertyType))
-                            result.Add(new Tuple<string, Type, object[]>(
-                                       "Table", typeof(Provider.AssociationAttribute), new[] { prop.Name + "Id", GetPKOfTable(prop.PropertyType), prop.Name }));
-
-                    }
-                    return result.ToArray();
-                };
-
-            Type propType = type.IntoGenericAsT(typeof(Provider.IEntityTable<>));
-
-            return ClassBuilder.CreateType("MapContainer", new[] { "Table" }, new[] { propType }, func());
+            return result.XmlSerialize();
         }
+
+        private void MapType(Type p, ref List<EntityMap> entities)
+        {
+            PropertyInfo[] relations = p.GetProperties().Where(a => GetRelationships(p) != null && GetRelationships(p).Any(b => b == a.PropertyType)).ToArray();
+            Func<Type, EntityColumn[]> getColumns = (a) =>
+            {
+                List<EntityColumn> list = new List<EntityColumn>();
+                PropertyInfo[] props = a.GetProperties();
+                foreach (PropertyInfo prop in props)
+                {
+                    if (prop.PropertyType.IsCollection() || (PropertiesIngored.ContainsKey(a) && PropertiesIngored[a].Any(c => c == prop)))
+                        continue;
+
+                    bool isPk = (props[GetPKOrdinalOfType(a)] == prop) ? true : false;
+                    list.Add(new EntityColumn(
+                          prop.Name
+                        , ShouldNormalize(prop.PropertyType) ? prop.Name + "Id" : prop.Name
+                        , isPk ? true : false
+                        , isPk ? true : false
+                        , DeterminSQLType(prop.PropertyType)
+                    ));
+                }
+
+                return list.ToArray();
+            };
+            Func<Type, EntityAssociation[]> getAssociations = (a) =>
+            {
+                List<EntityAssociation> list = new List<EntityAssociation>();
+                PropertyInfo[] props = a.GetProperties().Where(
+                                               b => ShouldNormalize(b.PropertyType) && (!PropertiesIngored.ContainsKey(a) || PropertiesIngored[a].Any(c => c != b))
+                                            ).ToArray();
+
+
+                foreach (PropertyInfo prop in props)
+                {
+                    bool isPk = (props[GetPKOrdinalOfType(a)] == prop) ? true : false;
+                    list.Add(new EntityAssociation(
+                          prop.Name
+                        , prop.Name + "Id"
+                        , prop.PropertyType.Name
+                        , GetPKOfTable(prop.PropertyType)
+                    ));
+                }
+
+
+                return list.ToArray();
+            };
+
+
+            entities.Add(new EntityMap(
+                        new EntityTable(GetTableName(p))
+                        , getColumns(p)
+                        , getAssociations(p)
+                        , p.Name));
+
+
+            if (relations != null)
+                foreach (PropertyInfo relation in relations)
+                {
+                    if (relation.PropertyType.IsCollection())
+                        MapCollection(relation.PropertyType, ref entities, p, relation.Name);
+                    else
+                        MapType(relation.PropertyType, ref entities);
+                }
+        }
+
+        private void MapCollection(Type p, ref List<EntityMap> entities, Type parent, string collectionName)
+        {
+            Func<Type, EntityColumn[]> getColumns = (a) =>
+            {
+                List<EntityColumn> list = new List<EntityColumn>();
+                PropertyInfo[] props = a.GetProperties();
+                for (int i = 0; i < 2; i++)
+                {
+                    list.Add(new EntityColumn(
+                          (i == 0) ? "" : collectionName
+                        , (i == 0) ? parent.Name + "Id" : (p.GetTypeOfT().IsSystemType()) ? "Serialized" + p.GetTypeOfT().Name + "Collections" : p.GetTypeOfT().Name + "Id"
+                        , (i == 0) ? true : false
+                        , (i == 0) ? true : false
+                        , DeterminSQLType((i == 0) ? typeof(int) : (p.GetTypeOfT().IsSystemType()) ? typeof(string) : typeof(int))
+                    ));
+                }
+
+                return list.ToArray();
+            };
+
+            entities.Add(new EntityMap(
+                        new EntityTable(parent.Name + "_" +collectionName+"_"+ GetTableName(p))
+                        , getColumns(p)
+                        , new[] { new EntityAssociation(
+                             collectionName
+                           , parent.Name + "Id"
+                           , parent.Name
+                           , GetPKOfTable(parent)) }
+                        , collectionName + p.Name));
+
+        }
+
 
         private bool ShouldNormalize(Type type)
         {
@@ -392,6 +474,9 @@ namespace NostreetsORM
 
         private Type[] GetRelationships(Type type)
         {
+            if (type.IsCollection())
+                return new[] { type.GetTypeOfT() };
+
             Type[] result = null;
             List<Type> list = null;
             List<PropertyInfo> relations = type.GetProperties().Where(a => ShouldNormalize(a.PropertyType) || a.PropertyType.IsCollection()).ToList();
@@ -1040,137 +1125,6 @@ namespace NostreetsORM
 
         }
 
-        private void AddEnumsAsRows(Type type)
-        {
-            if (type.BaseType != typeof(Enum))
-                throw new Exception("type's BaseType has to be a Enum...");
-
-            var fields = type.GetFields();
-            for (int i = 1; i < fields.Length; i++)
-            {
-                Instance.ExecuteNonQuery(() => Connection,
-                                "dbo." + GetTableName(type) + "_Insert",
-                                (param) => param.Add(new SqlParameter("Value", fields[i].Name)),
-                                null);
-            }
-        }
-
-        private string CreateTable(Type type)
-        {
-            ++_tableLayer;
-            _tableCreation = true;
-            string result = null;
-
-            if (NeedsIdProp(type))
-                type = type.AddProperty(typeof(int), "Id");
-
-            int pkOrdinal = GetPKOrdinalOfType(type);
-
-            if (!CheckIfTypeIsCurrent(type))
-            {
-                if (!CheckIfTableExist(type))
-                {
-                    string query = GetCreateTableQuery(type);
-                    int isTrue = 0;
-
-
-                    _lastQueryExcuted = query;
-
-                    Instance.ExecuteCmd(() => Connection,
-                       query,
-                        null,
-                        (reader, set) =>
-                        {
-                            isTrue = reader.GetSafeInt32(0);
-                        },
-                        null,
-                        mod => mod.CommandType = CommandType.Text);
-
-                    if (isTrue != 1)
-                        throw new Exception("{0} Table Creation was not successful...".FormatString(type.Name));
-                }
-
-                CreateIntermaiateTables(type);
-                CreateProcedures(type);
-
-
-                if (type.IsEnum)
-                {
-                    AddEnumsAsRows(type);
-                    result = "Id";
-                }
-                else if (ShouldNormalize(type))
-                {
-                    result = type.GetProperties()[pkOrdinal].Name;
-                }
-
-            }
-            else
-            {
-                if (type.IsEnum)
-                    result = "Id";
-
-                else if (ShouldNormalize(type))
-                    result = type.GetProperties()[pkOrdinal].Name;
-
-
-
-            }
-
-            --_tableLayer;
-            _tableCreation = (_tableLayer == 0) ? false : true;
-
-            return result;
-        }
-
-        private void CreateIntermaiateTables(Type type)
-        {
-            ++_tableLayer;
-
-            if (type.GetProperties().Length > 0 && type.GetProperties().Any(a => a.PropertyType.IsCollection()))
-            {
-                foreach (PropertyInfo prop in type.GetProperties())
-                {
-                    if (!prop.PropertyType.IsCollection())
-                        continue;
-
-                    //if (prop.PropertyType.GetTypeOfT().IsSystemType())
-                    //    continue;
-
-                    if (!CheckIfTableExist(type))
-                        throw new Exception("{0} has to be a table in the database to make an intermediate table between the two...".FormatString(type.Name));
-
-
-                    if (!CheckIfTableExist(prop.PropertyType, type.Name.SafeName() + '_' + prop.Name + '_'))
-                    {
-                        int isTrue = 0;
-                        string query = GetCreateIntermaiateTableQuery(type, prop);
-
-
-                        _lastQueryExcuted = query;
-
-                        Instance.ExecuteCmd(() => Connection,
-                              query,
-                               null,
-                               (reader, set) =>
-                               {
-                                   isTrue = reader.GetSafeInt32(0);
-                               },
-                               null,
-                               mod => mod.CommandType = CommandType.Text);
-
-
-                        if (isTrue != 1)
-                            throw new Exception("Intermediate Table Create between {0} and {1} was not successful...".FormatString(type.Name, prop.PropertyType.Name));
-                    }
-
-                    CreateProcedures(prop.PropertyType, type.Name.SafeName() + '_' + prop.Name + "_");
-                }
-            }
-
-            --_tableLayer;
-        }
-
         private void CreateBackupTable(Type type, string prefix = null)
         {
             if (CheckIfTableExist(type, prefix) && !CheckIfBackUpExist(type, prefix))
@@ -1316,11 +1270,142 @@ namespace NostreetsORM
             }
         }
 
+        private void AddEnumsAsRows(Type type)
+        {
+            if (type.BaseType != typeof(Enum))
+                throw new Exception("type's BaseType has to be a Enum...");
+
+            var fields = type.GetFields();
+            for (int i = 1; i < fields.Length; i++)
+            {
+                Instance.ExecuteNonQuery(() => Connection,
+                                "dbo." + GetTableName(type) + "_Insert",
+                                (param) => param.Add(new SqlParameter("Value", fields[i].Name)),
+                                null);
+            }
+        }
+
+        private string CreateTable(Type type)
+        {
+            ++_tableLayer;
+            _tableCreation = true;
+            string result = null;
+
+            if (NeedsIdProp(type))
+                type = type.AddProperty(typeof(int), "Id");
+
+            int pkOrdinal = GetPKOrdinalOfType(type);
+
+            if (!CheckIfTypeIsCurrent(type))
+            {
+                if (!CheckIfTableExist(type))
+                {
+                    string query = GetCreateTableQuery(type);
+                    int isTrue = 0;
+
+
+                    _lastQueryExcuted = query;
+
+                    Instance.ExecuteCmd(() => Connection,
+                       query,
+                        null,
+                        (reader, set) =>
+                        {
+                            isTrue = reader.GetSafeInt32(0);
+                        },
+                        null,
+                        mod => mod.CommandType = CommandType.Text);
+
+                    if (isTrue != 1)
+                        throw new Exception("{0} Table Creation was not successful...".FormatString(type.Name));
+                }
+
+                CreateIntermaiateTables(type);
+                CreateProcedures(type);
+
+
+                if (type.IsEnum)
+                {
+                    AddEnumsAsRows(type);
+                    result = "Id";
+                }
+                else if (ShouldNormalize(type))
+                {
+                    result = type.GetProperties()[pkOrdinal].Name;
+                }
+
+            }
+            else
+            {
+                if (type.IsEnum)
+                    result = "Id";
+
+                else if (ShouldNormalize(type))
+                    result = type.GetProperties()[pkOrdinal].Name;
+
+
+
+            }
+
+            --_tableLayer;
+            _tableCreation = (_tableLayer == 0) ? false : true;
+
+            return result;
+        }
+
+        private void CreateIntermaiateTables(Type type)
+        {
+            ++_tableLayer;
+
+            if (type.GetProperties().Length > 0 && type.GetProperties().Any(a => a.PropertyType.IsCollection()))
+            {
+                foreach (PropertyInfo prop in type.GetProperties())
+                {
+                    if (!prop.PropertyType.IsCollection())
+                        continue;
+
+                    //if (prop.PropertyType.GetTypeOfT().IsSystemType())
+                    //    continue;
+
+                    if (!CheckIfTableExist(type))
+                        throw new Exception("{0} has to be a table in the database to make an intermediate table between the two...".FormatString(type.Name));
+
+
+                    if (!CheckIfTableExist(prop.PropertyType, type.Name.SafeName() + '_' + prop.Name + '_'))
+                    {
+                        int isTrue = 0;
+                        string query = GetCreateIntermaiateTableQuery(type, prop);
+
+
+                        _lastQueryExcuted = query;
+
+                        Instance.ExecuteCmd(() => Connection,
+                              query,
+                               null,
+                               (reader, set) =>
+                               {
+                                   isTrue = reader.GetSafeInt32(0);
+                               },
+                               null,
+                               mod => mod.CommandType = CommandType.Text);
+
+
+                        if (isTrue != 1)
+                            throw new Exception("Intermediate Table Create between {0} and {1} was not successful...".FormatString(type.Name, prop.PropertyType.Name));
+                    }
+
+                    CreateProcedures(prop.PropertyType, type.Name.SafeName() + '_' + prop.Name + "_");
+                }
+            }
+
+            --_tableLayer;
+        }
+
         #endregion
 
         #region Internal Reads
 
-        private string GetPKOfTable(Type type)
+        private string GetPKOfTable(Type type, string prefix = null)
         {
             if (type.IsEnum || NeedsIdProp(type))
                 return "Id";
@@ -1343,6 +1428,15 @@ namespace NostreetsORM
                     },
                     null, mod => mod.CommandType = CommandType.Text);
 
+            }
+            else if (type.IsCollection())
+            {
+                return prefix + "Id";
+            }
+            else
+            {
+                int oridnal = GetPKOrdinalOfType(type);
+                result = type.GetProperties().ElementAt(oridnal).Name;
             }
 
             return result;
@@ -2381,6 +2475,9 @@ namespace NostreetsORM
 
         public IEnumerable<object> Where(Func<object, bool> predicate)
         {
+
+            //TSqlFormatter.Format(predicate.ToExpression()).Log();
+
             IEnumerable<object> result = GetAll();
             if (result != null)
                 result = result.Where(predicate);
@@ -2388,6 +2485,11 @@ namespace NostreetsORM
                 result = new List<object>();
 
             return result;
+        }
+
+        public object FirstOrDefault(Func<object, bool> predicate)
+        {
+            return Where(predicate).FirstOrDefault();
         }
 
         #endregion
@@ -2463,6 +2565,8 @@ namespace NostreetsORM
 
         public IEnumerable<T> Where(Func<T, bool> predicate)
         {
+            //TSqlFormatter.Format(predicate.ToExpression()).Log();
+
             IEnumerable<T> result = GetAll();
             if (result != null)
                 result = result.Where(predicate);
@@ -2475,6 +2579,11 @@ namespace NostreetsORM
         public void Delete(object id)
         {
             _baseSrv.Delete(id);
+        }
+
+        public T FirstOrDefault(Func<T, bool> predicate)
+        {
+            return Where(predicate).FirstOrDefault();
         }
     }
 
@@ -2564,6 +2673,9 @@ namespace NostreetsORM
 
         public IEnumerable<T> Where(Func<T, bool> predicate)
         {
+            //var exp = predicate.ToExpression();
+            //TSqlFormatter.Format(exp, true).Log();
+
             IEnumerable<T> result = GetAll();
             if (result != null)
                 result = result.Where(predicate);
@@ -2571,6 +2683,11 @@ namespace NostreetsORM
                 result = new List<T>();
 
             return result;
+        }
+
+        public T FirstOrDefault(Func<T, bool> predicate)
+        {
+            return Where(predicate).FirstOrDefault();
         }
     }
 
@@ -2658,6 +2775,9 @@ namespace NostreetsORM
 
         public IEnumerable<T> Where(Func<T, bool> predicate)
         {
+            //Expression<Func<T, bool>> exp = x => predicate(x);
+            //TSqlFormatter.Format(exp).Log();
+
             IEnumerable<T> result = GetAll();
             if (result != null)
                 result = result.Where(predicate);
@@ -2675,6 +2795,11 @@ namespace NostreetsORM
         public void Update(UpdateType model, Converter<UpdateType, T> converter)
         {
             Update(converter(model));
+        }
+
+        public T FirstOrDefault(Func<T, bool> predicate)
+        {
+            return Where(predicate).FirstOrDefault();
         }
     }
 
