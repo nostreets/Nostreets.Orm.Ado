@@ -96,9 +96,11 @@ namespace NostreetsORM
                                            _procTemplates = null;
         private Dictionary<Type, PropertyInfo[]> _propertiesIngored = null;
         private string _lastQueryExcuted = null;
+        private Type _idType = null;
 
 
         #region Internal Logic
+
         private void SetUp(Type type, bool nullLock)
         {
             if (NeedsIdProp(type))
@@ -111,13 +113,15 @@ namespace NostreetsORM
 
             _type = type;
             _nullLock = nullLock;
-            _propertiesIngored = new Dictionary<Type, PropertyInfo[]>();
+            _idType = type.GetProperties()[GetPKOrdinalOfType(_type)].PropertyType;
 
             //MapAllTypes().Log();
             //QueryProvider = new SqlQueryProvider(Connection, XmlMapping.FromXml(MapAllTypes()), QueryPolicy.Default);
 
 
-            bool doesExist = CheckIfTableExist(_type), isCurrent = TablesAccessed.All(a => CheckIfTypeIsCurrent(a.Key));
+            bool doesExist = CheckIfTableExist(_type), 
+                 isCurrent = TablesAccessed.All(a => CheckIfTypeIsCurrent(a.Key));
+
             _procTemplates = new Dictionary<string, string>
                 {
                     { "Insert",  _partialProcs["InsertWithNewIDProcedure"]},
@@ -302,7 +306,6 @@ namespace NostreetsORM
                         , collectionName + p.Name));
 
         }
-
 
         private bool ShouldNormalize(Type type)
         {
@@ -1508,7 +1511,11 @@ namespace NostreetsORM
 
                     List<PropertyInfo> excludedProps = type.GetPropertiesByAttribute<NotMappedAttribute>();
                     if (excludedProps != null)
+                    {
+                        if (_propertiesIngored == null)
+                            _propertiesIngored = new Dictionary<Type, PropertyInfo[]>();
                         _propertiesIngored.AddValues(excludedProps);
+                    }
 
 
                     List<PropertyInfo> includedProps = baseProps.Where(a => (excludedProps != null && !excludedProps.Contains(a) && !a.PropertyType.IsCollection()) || !a.PropertyType.IsCollection()).ToList();
@@ -1719,7 +1726,7 @@ namespace NostreetsORM
                 });
 
 
-            result = InstantateFromTable(type, tableType);
+            result = InstantateFromTable(type, tableObj);
 
             return result;
         }
@@ -2083,7 +2090,7 @@ namespace NostreetsORM
                    , null);
         }
 
-        private string GetSerializedCollection(int parentId, Type parentType, PropertyInfo property)
+        private string GetSerializedCollection(object parentId, Type parentType, PropertyInfo property)
         {
             string result = null;
             string parentTypeName = parentType.Name.SafeName(),
@@ -2239,7 +2246,7 @@ namespace NostreetsORM
 
         }
 
-        private int[] GetCollectionIds(int parentId, Type parentType, Type childType)
+        private int[] GetCollectionIds(object parentId, Type parentType, Type childType)
         {
             if (childType.IsSystemType())
                 return null;
@@ -2317,13 +2324,13 @@ namespace NostreetsORM
 
                     if (!listType.IsSystemType())
                     {
-                        int[] collectionIds = GetCollectionIds((int)tblOfType.GetPropertyValue(prop.Name + "Id"), type, listType);
+                        int[] collectionIds = GetCollectionIds(tblOfType.GetPropertyValue(prop.Name + "Id"), type, listType);
                         List<object> collection = GetMultiple(listType, collectionIds);
                         result.SetPropertyValue(prop.Name, collection);
                     }
                     else
                     {
-                        string serializedObj = GetSerializedCollection((int)tblOfType.GetPropertyValue(prop.Name + "Id"), type, prop);
+                        string serializedObj = GetSerializedCollection(tblOfType.GetPropertyValue(GetPKOfTable(type)), type, prop);
                         result.SetPropertyValue(prop.Name, JsonConvert.DeserializeObject(serializedObj));
                     }
                 }
@@ -2436,16 +2443,16 @@ namespace NostreetsORM
 
         public void Delete(object id)
         {
-            if (id.GetType() != typeof(int))
-                throw new Exception("id's Type has to be the type of int to be able to Delete...");
+            if (id.GetType() != _idType)
+                throw new Exception("id is not the right Type and cannot Delete...");
 
             Delete(_type, id);
         }
 
         public object Get(object id)
         {
-            if (id.GetType() != typeof(int))
-                throw new Exception("id's Type has to be the type of int to be able to Get...");
+            if (id.GetType() != _idType)
+                throw new Exception("id is not the right Type and cannot Get...");
 
             return Get(_type, id);
         }
@@ -2467,7 +2474,7 @@ namespace NostreetsORM
             if (model.GetType() != _type)
                 throw new Exception("model's Type has to be the type of T in DBService<T> to be able to Update...");
 
-            if (model.GetPropertyValue("Id") == null || (int)model.GetPropertyValue("Id") == 0)
+            if (model.GetPropertyValue("Id") == null)
                 throw new Exception("model's Id propery has to equal an PK in the Database to be able to Update...");
 
             Update(model, (int)model.GetPropertyValue("Id"), _type);
@@ -2533,7 +2540,7 @@ namespace NostreetsORM
                 if (listType != typeof(T))
                     throw new Exception("objects in list are not the right Type of entity to access..");
 
-                if (result.Count == 0)
+                if (result == null)
                     result = list.Cast<T>().ToList();
             }
 
