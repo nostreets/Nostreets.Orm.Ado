@@ -2331,7 +2331,7 @@ namespace NostreetsORM
                     else
                     {
                         string serializedObj = GetSerializedCollection(tblOfType.GetPropertyValue(GetPKOfTable(type)), type, prop);
-                        result.SetPropertyValue(prop.Name, JsonConvert.DeserializeObject(serializedObj));
+                        result.SetPropertyValue(prop.Name, JsonConvert.DeserializeObject(serializedObj, prop.PropertyType));
                     }
                 }
                 else
