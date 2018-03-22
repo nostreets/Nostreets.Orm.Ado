@@ -84,8 +84,8 @@ namespace NostreetsORM
         }
 
         public Dictionary<Type, PropertyInfo[]> PropertiesIngored => _propertiesIngored;
-        public Dictionary<string, string> ProcTemplates { get => _procTemplates; }
-        public string LastQueryExcuted { get => _lastQueryExcuted; set => _lastQueryExcuted = value; }
+        public string LastQueryExcuted => _lastQueryExcuted;
+        public Type IdType => _idType;
 
 
         private bool _tableCreation = false,
@@ -113,25 +113,16 @@ namespace NostreetsORM
 
             _type = type;
             _nullLock = nullLock;
-            _idType = type.GetProperties()[GetPKOrdinalOfType(_type)].PropertyType;
+            _idType = type.GetProperties()[GetPKOrdinalOfType(type)].PropertyType;
 
             //MapAllTypes().Log();
             //QueryProvider = new SqlQueryProvider(Connection, XmlMapping.FromXml(MapAllTypes()), QueryPolicy.Default);
 
 
-            bool doesExist = CheckIfTableExist(_type), 
+            bool doesExist = CheckIfTableExist(_type),
                  isCurrent = TablesAccessed.All(a => CheckIfTypeIsCurrent(a.Key));
 
-            _procTemplates = new Dictionary<string, string>
-                {
-                    { "Insert",  _partialProcs["InsertWithNewIDProcedure"]},
-                    { "InsertWithID",  _partialProcs["InsertWithIDProcedure"]},
-                    { "Update",  _partialProcs["UpdateProcedure"]},
-                    { "SelectAll",  _partialProcs["SelectProcedure"]},
-                    { "SelectBy",  _partialProcs["SelectProcedure"]},
-                    { "Delete",  _partialProcs["DeleteProcedure"]}
 
-                };
 
             if (!doesExist)
             {
@@ -196,6 +187,17 @@ namespace NostreetsORM
             _partialProcs.Add("PrimaryKeyStatement", "PRIMARY KEY CLUSTERED ([{0}] ASC)");
             _partialProcs.Add("IdentityInsertStatement", " SET IDENTITY_INSERT [dbo].[{0}] {1}");
 
+
+            _procTemplates = new Dictionary<string, string>
+                {
+                    { "Insert",  _partialProcs["InsertWithNewIDProcedure"]},
+                    { "InsertWithID",  _partialProcs["InsertWithIDProcedure"]},
+                    { "Update",  _partialProcs["UpdateProcedure"]},
+                    { "SelectAll",  _partialProcs["SelectProcedure"]},
+                    { "SelectBy",  _partialProcs["SelectProcedure"]},
+                    { "Delete",  _partialProcs["DeleteProcedure"]}
+
+                };
         }
 
         private string MapAllTypes()
@@ -296,7 +298,7 @@ namespace NostreetsORM
             };
 
             entities.Add(new EntityMap(
-                        new EntityTable(parent.Name + "_" +collectionName+"_"+ GetTableName(p))
+                        new EntityTable(parent.Name + "_" + collectionName + "_" + GetTableName(p))
                         , getColumns(p)
                         , new[] { new EntityAssociation(
                              collectionName
@@ -866,7 +868,7 @@ namespace NostreetsORM
 
                     query = template.Value.FormatString(
                                             GetTableName(type)
-                                            , "@{0} INT, ".FormatString(props[pkOrdinal].Name) + inputParams
+                                            , "@{0} {1}, ".FormatString(props[pkOrdinal].Name, DeterminSQLType(props[pkOrdinal].PropertyType)) + inputParams
                                             , innerQuery);
                     break;
 
@@ -1154,7 +1156,7 @@ namespace NostreetsORM
         {
             List<string> procs = GetProcs(type, prefix);
 
-            foreach (KeyValuePair<string, string> template in ProcTemplates)
+            foreach (KeyValuePair<string, string> template in _procTemplates)
             {
                 string nameToCheck = (template.Key.Contains("Insert")) ? "Insert" : template.Key;
                 if (procs.Any(a => a.Contains(nameToCheck)))
@@ -1501,68 +1503,64 @@ namespace NostreetsORM
             else if (type.IsEnum)
                 return CheckIfEnumIsCurrent(type);
 
-            else
+            else if (ShouldNormalize(type))
             {
-                if (ShouldNormalize(type))
+
+                List<string> columnsInTable = Instance.GetSchema(() => Connection, GetTableName(type));
+                List<PropertyInfo> baseProps = type.GetProperties().ToList(),
+                                   excludedProps = type.GetPropertiesByAttribute<NotMappedAttribute>(),
+                                   includedProps = baseProps.Where(a => (excludedProps != null && !excludedProps.Contains(a) && !a.PropertyType.IsCollection()) || !a.PropertyType.IsCollection()).ToList();
+
+
+                if (excludedProps != null)
                 {
-                    List<string> columnsInTable = Instance.GetSchema(() => Connection, GetTableName(type));
-                    List<PropertyInfo> baseProps = type.GetProperties().ToList();
+                    if (_propertiesIngored == null)
+                        _propertiesIngored = new Dictionary<Type, PropertyInfo[]>();
+                    _propertiesIngored.AddValues(excludedProps);
+                }
+
+                if (NeedsIdProp(type))
+                {
+                    for (int i = 0; i < includedProps.Count; i++)
+                        if (includedProps[i].Name == "Id")
+                            includedProps.Remove(includedProps[i]);
+
+                    includedProps.Prepend(type.AddProperty(typeof(int), "Id").GetProperty("Id"));
+                }
 
 
-                    List<PropertyInfo> excludedProps = type.GetPropertiesByAttribute<NotMappedAttribute>();
-                    if (excludedProps != null)
+                foreach (string col in columnsInTable)
+                    if (!includedProps.Any(a => ((ShouldNormalize(a.PropertyType)) ? a.Name + "Id" : a.Name) == col))
+                        return false;
+
+
+                foreach (PropertyInfo prop in includedProps)
+                    if (!columnsInTable.Any(a => ((ShouldNormalize(prop.PropertyType)) ? prop.Name + "Id" : prop.Name) == a))
+                        return false;
+
+
+
+                if (includedProps.Any(a => ShouldNormalize(a.PropertyType)))
+                {
+                    PropertyInfo[] propsToCheck = includedProps.Where(a => ShouldNormalize(a.PropertyType)).DistinctBy(a => a.PropertyType).ToArray();
+                    foreach (PropertyInfo propToCheck in propsToCheck)
+                        if (!CheckIfTypeIsCurrent(propToCheck.PropertyType))
+                            return false;
+                }
+
+
+                if (baseProps.Any(a => (excludedProps != null && !excludedProps.Contains(a) && a.PropertyType.IsCollection()) || a.PropertyType.IsCollection()))
+                {
+                    PropertyInfo[] propsToCheck = baseProps.Where(a => (excludedProps != null && !excludedProps.Contains(a) && a.PropertyType.IsCollection()) || a.PropertyType.IsCollection()).Distinct().ToArray();
+                    foreach (PropertyInfo propToCheck in propsToCheck)
                     {
-                        if (_propertiesIngored == null)
-                            _propertiesIngored = new Dictionary<Type, PropertyInfo[]>();
-                        _propertiesIngored.AddValues(excludedProps);
-                    }
+                        Type listType = propToCheck.PropertyType.GetTypeOfT();
 
-
-                    List<PropertyInfo> includedProps = baseProps.Where(a => (excludedProps != null && !excludedProps.Contains(a) && !a.PropertyType.IsCollection()) || !a.PropertyType.IsCollection()).ToList();
-
-                    if (NeedsIdProp(type))
-                    {
-                        for (int i = 0; i < includedProps.Count; i++)
-                            if (includedProps[i].Name == "Id")
-                                includedProps.Remove(includedProps[i]);
-
-                        includedProps.Prepend(type.AddProperty(typeof(int), "Id").GetProperty("Id"));
-                    }
-
-
-                    foreach (string col in columnsInTable)
-                        if (!includedProps.Any(a => ((ShouldNormalize(a.PropertyType)) ? a.Name + "Id" : a.Name) == col))
+                        if (!listType.IsSystemType() && !CheckIfTypeIsCurrent(listType))
                             return false;
 
-
-                    foreach (PropertyInfo prop in includedProps)
-                        if (!columnsInTable.Any(a => ((ShouldNormalize(prop.PropertyType)) ? prop.Name + "Id" : prop.Name) == a))
+                        if (!CheckIfTypeIsCurrent(propToCheck.PropertyType, type.Name.SafeName() + "_" + propToCheck.Name + "_"))
                             return false;
-
-
-
-                    if (includedProps.Any(a => ShouldNormalize(a.PropertyType)))
-                    {
-                        PropertyInfo[] propsToCheck = includedProps.Where(a => ShouldNormalize(a.PropertyType)).DistinctBy(a => a.PropertyType).ToArray();
-                        foreach (PropertyInfo propToCheck in propsToCheck)
-                            if (!CheckIfTypeIsCurrent(propToCheck.PropertyType))
-                                return false;
-                    }
-
-
-                    if (baseProps.Any(a => (excludedProps != null && !excludedProps.Contains(a) && a.PropertyType.IsCollection()) || a.PropertyType.IsCollection()))
-                    {
-                        PropertyInfo[] propsToCheck = baseProps.Where(a => (excludedProps != null && !excludedProps.Contains(a) && a.PropertyType.IsCollection()) || a.PropertyType.IsCollection()).Distinct().ToArray();
-                        foreach (PropertyInfo propToCheck in propsToCheck)
-                        {
-                            Type listType = propToCheck.PropertyType.GetTypeOfT();
-
-                            if (!listType.IsSystemType() && !CheckIfTypeIsCurrent(listType))
-                                return false;
-
-                            if (!CheckIfTypeIsCurrent(propToCheck.PropertyType, type.Name.SafeName() + "_" + propToCheck.Name + "_"))
-                                return false;
-                        }
                     }
                 }
             }
@@ -1711,7 +1709,7 @@ namespace NostreetsORM
 
         private object Get(Type type, object id)
         {
-            object result = type.Instantiate();
+            object result = null;
             object tableObj = GetNormalizedSchema(type);
             Type tableType = tableObj.GetType();
             int pkOrdinal = GetPKOrdinalOfType(type);
@@ -1725,8 +1723,8 @@ namespace NostreetsORM
                     tableObj = DataMapper.MapToObject(reader, tableType);
                 });
 
-
-            result = InstantateFromTable(type, tableObj);
+            if (tableObj.GetPropertyValue(pkOrdinal) != null || (tableObj.GetPropertyValue(pkOrdinal).IsNumeric() && (int)tableObj.GetPropertyValue(pkOrdinal) != 0))
+                result = InstantateFromTable(type, tableObj);
 
             return result;
         }
@@ -1908,7 +1906,7 @@ namespace NostreetsORM
             return id;
         }
 
-        private void Update(object model, int id, Type type)
+        private void Update(object model, object id, Type type)
         {
 
             if (model == null)
@@ -1970,10 +1968,6 @@ namespace NostreetsORM
 
             foreach (PropertyInfo prop in type.GetProperties())
             {
-                /*if (prop.PropertyType.IsCollection() && prop.PropertyType.GetTypeOfT().IsSystemType())
-                    continue;
-
-                else*/
                 if (ShouldNormalize(prop.PropertyType) && !prop.PropertyType.IsEnum)
                     Update(model.GetPropertyValue(prop.Name), (int)tableObj.GetPropertyValue(prop.Name + "Id"), prop.PropertyType);
 
@@ -2018,7 +2012,7 @@ namespace NostreetsORM
 
         }
 
-        private void InsertRelationship(Type parent, Type child, int parentId, int childId)
+        private void InsertRelationship(Type parent, Type child, object parentId, int childId)
         {
             string collectionTbl = parent.Name + "_" + child.Name + "Collections";
             Type listType = parent.GetProperties().FirstOrDefault(a => a.PropertyType.IsCollection() && a.PropertyType.GetTypeOfT() == child).PropertyType;
@@ -2041,7 +2035,7 @@ namespace NostreetsORM
 
         }
 
-        private void InsertSerializedCollection(Type parentType, PropertyInfo property, int parentId, string serializedCollection)
+        private void InsertSerializedCollection(Type parentType, PropertyInfo property, object parentId, string serializedCollection)
         {
             string parentTypeName = parentType.Name.SafeName(),
                    childTypeName = property.PropertyType.GetTypeOfT().Name.SafeName();
@@ -2065,7 +2059,7 @@ namespace NostreetsORM
                    }, null, null, null);
         }
 
-        private void UpdateSerializedCollection(Type parentType, PropertyInfo property, int parentId, string serializedCollection)
+        private void UpdateSerializedCollection(Type parentType, PropertyInfo property, object parentId, string serializedCollection)
         {
             string parentTypeName = parentType.Name.SafeName(),
                   childTypeName = property.PropertyType.GetTypeOfT().Name.SafeName();
@@ -2122,7 +2116,7 @@ namespace NostreetsORM
 
         }
 
-        private void DeleteRelationship(Type parent, Type child, int parentId, int childId)
+        private void DeleteRelationship(Type parent, Type child, object parentId, int childId)
         {
             Type listType = parent.GetProperties().FirstOrDefault(a => a.PropertyType.IsCollection() && a.PropertyType.GetTypeOfT() == child).PropertyType;
 
@@ -2336,7 +2330,7 @@ namespace NostreetsORM
                 }
                 else
                 {
-                    object property = tblOfType.GetPropertyValue(prop.Name);
+                    object property = tblOfType.GetPropertyValue(prop.Name + ((prop.PropertyType.IsEnum) ? "Id" : ""));
                     result.SetPropertyValue(prop.Name, property);
                 }
             }
@@ -2477,7 +2471,10 @@ namespace NostreetsORM
             if (model.GetPropertyValue("Id") == null)
                 throw new Exception("model's Id propery has to equal an PK in the Database to be able to Update...");
 
-            Update(model, (int)model.GetPropertyValue("Id"), _type);
+            if (model.GetPropertyValue("Id").GetType() != _idType)
+                throw new Exception("model's Id propery has to equal the same Type as the Id column in the Database to be able to Update...");
+
+            Update(model, model.GetPropertyValue("Id"), _type);
         }
 
         public IEnumerable<object> Where(Func<object, bool> predicate)
@@ -2526,6 +2523,8 @@ namespace NostreetsORM
 
         private DBService _baseSrv = null;
 
+        public Type IdType => _baseSrv.IdType;
+
         public List<T> GetAll()
         {
             Type listType = null;
@@ -2550,12 +2549,10 @@ namespace NostreetsORM
         public T Get(object id)
         {
             T result = default(T);
+
             object item = _baseSrv.Get(id);
 
-            if (item.GetType() != typeof(T))
-                throw new Exception("item is not the right Type of entity to access..");
-
-            result = (T)item;
+            result = (item == null) ? null : (T)item;
 
             return result;
         }
@@ -2598,35 +2595,45 @@ namespace NostreetsORM
     {
         public DBService()
         {
-            _baseSrv = new DBService(typeof(T));
+            _baseSrv = new DBService<T>();
+
+            if (typeof(IdType) != _baseSrv.IdType)
+                throw new Exception("Specified IdType for model is not the right type... Expecting type of " + nameof(_baseSrv.IdType));
         }
 
         public DBService(string connectionKey)
         {
-            _baseSrv = new DBService(typeof(T), connectionKey);
+            _baseSrv = new DBService<T>(connectionKey);
+
+            if (typeof(IdType) != _baseSrv.IdType)
+                throw new Exception("Specified IdType for model is not the right type... Expecting type of " + nameof(_baseSrv.IdType));
         }
 
         public DBService(bool nullLock)
         {
-            _baseSrv = new DBService(typeof(T), nullLock);
+            _baseSrv = new DBService<T>(nullLock);
+
+            if (typeof(IdType) != _baseSrv.IdType)
+                throw new Exception("Specified IdType for model is not the right type... Expecting type of " + nameof(_baseSrv.IdType));
         }
 
         public DBService(string connectionKey, bool nullLock)
         {
-            _baseSrv = new DBService(typeof(T), connectionKey, nullLock);
+            _baseSrv = new DBService<T>(connectionKey, nullLock);
+
+            if (typeof(IdType) != _baseSrv.IdType)
+                throw new Exception("Specified IdType for model is not the right type... Expecting type of " + nameof(_baseSrv.IdType));
         }
 
-        private DBService _baseSrv = null;
+        private DBService<T> _baseSrv = null;
 
         public T Get(IdType id)
         {
             T result = default(T);
+
             object item = _baseSrv.Get(id);
 
-            if (item.GetType() != typeof(T))
-                throw new Exception("item is not the right Type of entity to access..");
-
-            result = (T)item;
+            result = (item == null) ? null : (T)item;
 
             return result;
         }
@@ -2654,7 +2661,7 @@ namespace NostreetsORM
         {
             List<T> result = null;
             Type listType = null;
-            List<object> list = _baseSrv.GetAll();
+            List<T> list = _baseSrv.GetAll();
 
             if (list != null)
             {
@@ -2702,35 +2709,33 @@ namespace NostreetsORM
     {
         public DBService()
         {
-            _baseSrv = new DBService(typeof(T));
+            _baseSrv = new DBService<T, IdType>();
         }
 
         public DBService(string connectionKey)
         {
-            _baseSrv = new DBService(typeof(T), connectionKey);
+            _baseSrv = new DBService<T, IdType>(connectionKey);
         }
 
         public DBService(bool nullLock)
         {
-            _baseSrv = new DBService(typeof(T), nullLock);
+            _baseSrv = new DBService<T, IdType>(nullLock);
         }
 
         public DBService(string connectionKey, bool nullLock)
         {
-            _baseSrv = new DBService(typeof(T), connectionKey, nullLock);
+            _baseSrv = new DBService<T, IdType>(connectionKey, nullLock);
         }
 
-        private DBService _baseSrv = null;
+        private DBService<T, IdType> _baseSrv = null;
 
         public T Get(IdType id)
         {
             T result = default(T);
-            object item = _baseSrv.Get(id);
 
-            if (item.GetType() != typeof(T))
-                throw new Exception("item is not the right Type of entity to access..");
+            T item = _baseSrv.Get(id);
 
-            result = (T)item;
+            result = (item == null) ? null : item;
 
             return result;
         }
@@ -2758,7 +2763,7 @@ namespace NostreetsORM
         {
             List<T> result = null;
             Type listType = null;
-            List<object> list = _baseSrv.GetAll();
+            List<T> list = _baseSrv.GetAll();
 
             if (list != null)
             {
