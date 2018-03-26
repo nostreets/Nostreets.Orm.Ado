@@ -1715,17 +1715,20 @@ namespace NostreetsORM
             object tableObj = GetNormalizedSchema(type);
             Type tableType = tableObj.GetType();
             int pkOrdinal = GetPKOrdinalOfType(type);
+            string pkName = (!type.IsEnum && !NeedsIdProp(type)) ? type.GetProperties()[pkOrdinal].Name : "Id";
 
             _lastQueryExcuted = "dbo." + GetTableName(type) + "_SelectById";
 
             Instance.ExecuteCmd(() => Connection, "dbo." + GetTableName(type) + "_SelectById",
-                param => param.Add(new SqlParameter((!type.IsEnum && !NeedsIdProp(type)) ? type.GetProperties()[pkOrdinal].Name : "Id", id)),
+                param => param.Add(new SqlParameter(pkName, id)),
                 (reader, set) =>
                 {
                     tableObj = DataMapper.MapToObject(reader, tableType);
                 });
 
-            if (tableObj.GetPropertyValue(pkOrdinal) != null || (tableObj.GetPropertyValue(pkOrdinal).IsNumeric() && (int)tableObj.GetPropertyValue(pkOrdinal) != 0))
+            if (tableObj.GetPropertyValue(pkName) != null || 
+               (tableObj.GetPropertyValue(pkName).IsNumeric() && (int)tableObj.GetPropertyValue(pkName) != 0))
+
                 result = InstantateFromTable(type, tableObj);
 
             return result;
