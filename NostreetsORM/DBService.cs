@@ -148,44 +148,67 @@ namespace NostreetsORM
             if (_partialProcs == null)
                 _partialProcs = new Dictionary<string, string>();
 
-            _partialProcs.Add("InsertWithNewIDProcedure", "CREATE Proc [dbo].[{0}_Insert] {1} As Begin Declare @NewId {2} Insert Into [dbo].{0}({3}){5} Values({4}) Set @NewId = COALESCE(SCOPE_IDENTITY(), @@IDENTITY) {6} Select @NewId End");
-            _partialProcs.Add("InsertWithIDProcedure", "CREATE Proc [dbo].[{0}_Insert] {1} As Begin Insert Into [dbo].{0}({2}) Values({3}) End");
-            _partialProcs.Add("UpdateProcedure", "CREATE Proc [dbo].[{0}_Update] {1} As Begin {2} End");
-            _partialProcs.Add("DeleteProcedure", "CREATE Proc [dbo].[{0}_Delete] @{1} {2} As Begin Delete {0} Where {1} = @{1} {3} End");
-            _partialProcs.Add("SelectProcedure", "CREATE Proc [dbo].[{0}_Select{5}] {3} AS Begin SELECT {1} FROM [dbo].[{0}] {2} {4} End");
-            _partialProcs.Add("NullCheckForUpdatePartial", "If @{2} Is Not Null Begin Update [dbo].{0} {1} End ");
+            _partialProcs.Add("InsertWithNewIDProcedure", 
+                "CREATE PROC [dbo].[{0}_Insert] {1} As Begin Declare @NewId {2} Insert Into [dbo].{0}({3}){5} Values({4}) Set @NewId = COALESCE(SCOPE_IDENTITY(), @@IDENTITY) {6} Select @NewId End");
+
+            _partialProcs.Add("InsertWithIDProcedure", 
+                "CREATE PROC [dbo].[{0}_Insert] {1} As Begin Insert Into [dbo].{0}({2}) Values({3}) End");
+
+            _partialProcs.Add("UpdateProcedure", 
+                "CREATE PROC [dbo].[{0}_Update] {1} As Begin {2} End");
+
+            _partialProcs.Add("DeleteProcedure", 
+                "CREATE PROC [dbo].[{0}_Delete] @{1} {2} As Begin Delete {0} Where {1} = @{1} {3} End");
+
+            _partialProcs.Add("SelectProcedure", 
+                "CREATE PROC [dbo].[{0}_Select{5}] {3} AS Begin SELECT {1} FROM [dbo].[{0}] {2} {4} End");
+
+            _partialProcs.Add("NullCheckForUpdatePartial", 
+                "If @{2} Is Not Null Begin Update [dbo].{0} {1} End ");
 
 
-            _partialProcs.Add("GetPKOfTable", "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE OBJECTPROPERTY(OBJECT_ID(CONSTRAINT_SCHEMA + '.' + QUOTENAME(CONSTRAINT_NAME)), 'IsPrimaryKey') = 1 AND TABLE_NAME = '{0}'");
-            _partialProcs.Add("GetAllColumns", "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '{0}'");
-            _partialProcs.Add("GetAllProcs", "SELECT NAME FROM [dbo].[sysobjects] WHERE(type = 'P')");
-            _partialProcs.Add("CheckIfTableExist", "Declare @IsTrue int = 0 IF EXISTS(SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = N'{0}') Begin Set @IsTrue = 1 End Select @IsTrue");
-            _partialProcs.Add("CreateTableType", "CREATE TYPE [dbo].[{0}] AS TABLE( {1} )");
-            _partialProcs.Add("CreateTable", "Declare @isTrue int = 0 Begin CREATE TABLE [dbo].[{0}] ( {1} ); IF EXISTS(SELECT* FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = N'{0}') Begin Set @IsTrue = 1 End End Select @IsTrue");
+            _partialProcs.Add("GetPKOfTable",
+                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE OBJECTPROPERTY(OBJECT_ID(CONSTRAINT_SCHEMA + '.' + QUOTENAME(CONSTRAINT_NAME)), 'IsPrimaryKey') = 1 AND TABLE_NAME = '{0}'");
+
+            _partialProcs.Add("GetAllColumns",
+                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '{0}'");
+
+            _partialProcs.Add("GetAllProcs", 
+                "SELECT NAME FROM [dbo].[sysobjects] WHERE(type = 'P')");
+
+            _partialProcs.Add("CheckIfTableExist", 
+                "Declare @IsTrue int = 0 IF EXISTS(SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = N'{0}') Begin Set @IsTrue = 1 End Select @IsTrue");
+
+            _partialProcs.Add("CreateTableType", 
+                "CREATE TYPE [dbo].[{0}] AS TABLE( {1} )");
+
+            _partialProcs.Add("CreateTable",
+                "Declare @isTrue int = 0 Begin CREATE TABLE [dbo].[{0}] ( {1} ); IF EXISTS(SELECT* FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = N'{0}') Begin Set @IsTrue = 1 End End Select @IsTrue");
+
             _partialProcs.Add("CreateColumn", "[{0}] {1} {2}");
 
 
-            _partialProcs.Add("SelectStatement", " SELECT {0}");
-            _partialProcs.Add("FromStatement", " FROM [dbo].[{0}]");
-            _partialProcs.Add("InsertIntoStatement", " INSERT INTO [dbo].[{0}]({1})");
-            _partialProcs.Add("UpdateStatement", " UPDATE {0}");
-            _partialProcs.Add("SetStatement", " SET {0}");
-            _partialProcs.Add("ValuesStatement", " VALUES({2})");
-            _partialProcs.Add("CopyTableStatement", "SELECT {2} INTO {1} FROM {0}");
-            _partialProcs.Add("IfStatement", " IF {0} BEGIN {1} END");
-            _partialProcs.Add("ElseStatement", " ELSE BEGIN {0} END");
-            _partialProcs.Add("ElseIfStatement", " ELSE IF BEGIN {0} END");
-            _partialProcs.Add("DeclareStatement", " DECLARE {0} {1} = {2}");
-            _partialProcs.Add("DeleteRowsStatement", " DELETE {0}");
-            _partialProcs.Add("DropTableStatement", " DROP TABLE {0}");
-            _partialProcs.Add("DropTableTypeStatement", " DROP TYPE [dbo].[{0}]");
-            _partialProcs.Add("DropProcedureStatement", " DROP PROCEDURE {0}");
-            _partialProcs.Add("WhereStatement", " WHERE {0}");
-            _partialProcs.Add("BeginEndStatement", " BEGIN {1} END");
-            _partialProcs.Add("CountStatement", " COUNT({0})");
-            _partialProcs.Add("GroupByStatement", " GROUP BY {0}");
-            _partialProcs.Add("PrimaryKeyStatement", "PRIMARY KEY CLUSTERED ([{0}] ASC)");
-            _partialProcs.Add("IdentityInsertStatement", " SET IDENTITY_INSERT [dbo].[{0}] {1}");
+            _partialProcs.Add("Select", " SELECT {0}");
+            _partialProcs.Add("From", " FROM [dbo].[{0}]");
+            _partialProcs.Add("InsertInto", " INSERT INTO [dbo].[{0}]({1})");
+            _partialProcs.Add("Update", " UPDATE {0}");
+            _partialProcs.Add("Set", " SET {0}");
+            _partialProcs.Add("Values", " VALUES({2})");
+            _partialProcs.Add("CopyTable", "SELECT {2} INTO {1} FROM {0}");
+            _partialProcs.Add("If", " IF {0} BEGIN {1} END");
+            _partialProcs.Add("Else", " ELSE BEGIN {0} END");
+            _partialProcs.Add("ElseIf", " ELSE IF BEGIN {0} END");
+            _partialProcs.Add("Declare", " DECLARE {0} {1} = {2}");
+            _partialProcs.Add("DeleteRows", " DELETE {0}");
+            _partialProcs.Add("DropTable", " DROP TABLE {0}");
+            _partialProcs.Add("DropTableType", " DROP TYPE [dbo].[{0}]");
+            _partialProcs.Add("DropProc", " DROP PROCEDURE {0}");
+            _partialProcs.Add("Where", " WHERE {0}");
+            _partialProcs.Add("BeginEnd", " BEGIN {1} END");
+            _partialProcs.Add("Count", " COUNT({0})");
+            _partialProcs.Add("GroupBy", " GROUP BY {0}");
+            _partialProcs.Add("PK", "PRIMARY KEY CLUSTERED ([{0}] ASC)");
+            _partialProcs.Add("IdentityInsert", " SET IDENTITY_INSERT [dbo].[{0}] {1}");
 
 
             _procTemplates = new Dictionary<string, string>
@@ -1083,9 +1106,9 @@ namespace NostreetsORM
 
                     string prefixed = prefix.Remove(prefix.Length - 1, 1);
 
-                    query = _partialProcs["InsertIntoStatement"].FormatString(GetTableName(type, prefix), "{0}Id, {1}" + ((listType.IsSystemType()) ? "Serialized" + GetTableName(type) : "Id").FormatString(prefixed, listType.Name));
-                    query += _partialProcs["SelectStatement"].FormatString("{0}Id, {1}" + ((listType.IsSystemType()) ? "Serialized" + GetTableName(type) : "Id").FormatString(prefixed, listType.Name));
-                    query += _partialProcs["FromStatement"].FormatString("temp" + GetTableName(type, prefix));
+                    query = _partialProcs["InsertInto"].FormatString(GetTableName(type, prefix), "{0}Id, {1}" + ((listType.IsSystemType()) ? "Serialized" + GetTableName(type) : "Id").FormatString(prefixed, listType.Name));
+                    query += _partialProcs["Select"].FormatString("{0}Id, {1}" + ((listType.IsSystemType()) ? "Serialized" + GetTableName(type) : "Id").FormatString(prefixed, listType.Name));
+                    query += _partialProcs["From"].FormatString("temp" + GetTableName(type, prefix));
                 }
                 else
                 {
@@ -1100,10 +1123,10 @@ namespace NostreetsORM
 
                     string columns = String.Join(", ", matchingColumns);
 
-                    query = _partialProcs["IdentityInsertStatement"].FormatString(GetTableName(type), "ON");
-                    query += _partialProcs["InsertIntoStatement"].FormatString(GetTableName(type), columns);
-                    query += _partialProcs["SelectStatement"].FormatString(columns);
-                    query += _partialProcs["FromStatement"].FormatString("temp" + GetTableName(type));
+                    query = _partialProcs["IdentityInsert"].FormatString(GetTableName(type), "ON");
+                    query += _partialProcs["InsertInto"].FormatString(GetTableName(type), columns);
+                    query += _partialProcs["Select"].FormatString(columns);
+                    query += _partialProcs["From"].FormatString("temp" + GetTableName(type));
 
 
                 }
@@ -1136,7 +1159,7 @@ namespace NostreetsORM
         {
             if (CheckIfTableExist(type, prefix) && !CheckIfBackUpExist(type, prefix))
             {
-                string query = _partialProcs["CopyTableStatement"].FormatString(GetTableName(type, prefix), "temp" + GetTableName(type, prefix), "*");
+                string query = _partialProcs["CopyTable"].FormatString(GetTableName(type, prefix), "temp" + GetTableName(type, prefix), "*");
                 object result = null;
 
 
@@ -1206,7 +1229,7 @@ namespace NostreetsORM
         {
             if (CheckIfBackUpExist(type, prefix))
             {
-                string sqlTemp = _partialProcs["DropTableStatement"];
+                string sqlTemp = _partialProcs["DropTable"];
                 string query = String.Format(sqlTemp, "temp" + GetTableName(type, prefix));
                 object result = null;
 
@@ -1232,7 +1255,7 @@ namespace NostreetsORM
             {
                 foreach (string proc in classProcs)
                 {
-                    string sqlTemp = _partialProcs["DropProcedureStatement"];
+                    string sqlTemp = _partialProcs["DropProc"];
                     string query = String.Format(sqlTemp, proc);
                     object result = null;
 
@@ -1257,7 +1280,7 @@ namespace NostreetsORM
         {
             if (CheckIfTableExist(type, prefix))
             {
-                string sqlTemp = _partialProcs["DropTableStatement"];
+                string sqlTemp = _partialProcs["DropTable"];
                 string query = String.Format(sqlTemp, GetTableName(type, prefix));
                 object result = null;
 
@@ -2073,9 +2096,9 @@ namespace NostreetsORM
             Type listType = parentType.GetProperties().FirstOrDefault(a => a.PropertyType.IsCollection() && a == property).PropertyType;
 
 
-            string query = _partialProcs["UpdateStatement"].FormatString(collectionTbl)
-                         + _partialProcs["SetStatement"].FormatString("[Serialized" + childTypeName + "Collections] = '" + serializedCollection + "'")
-                         + _partialProcs["WhereStatement"].FormatString(parentTypeName + "Id = " + parentId);
+            string query = _partialProcs["Update"].FormatString(collectionTbl)
+                         + _partialProcs["Set"].FormatString("[Serialized" + childTypeName + "Collections] = '" + serializedCollection + "'")
+                         + _partialProcs["Where"].FormatString(parentTypeName + "Id = " + parentId);
 
 
             _lastQueryExcuted = query;
@@ -2099,9 +2122,9 @@ namespace NostreetsORM
             string collectionTbl = parentTypeName + '_' + property.Name + '_' + childTypeName + "Collections";
             Type listType = parentType.GetProperties().FirstOrDefault(a => a.PropertyType.IsCollection() && a == property).PropertyType;
 
-            string query = _partialProcs["SelectStatement"].FormatString("Serialized" + childTypeName + "Collections")
-                         + _partialProcs["FromStatement"].FormatString(collectionTbl)
-                         + _partialProcs["WhereStatement"].FormatString(parentTypeName + "Id = " + parentId);
+            string query = _partialProcs["Select"].FormatString("Serialized" + childTypeName + "Collections")
+                         + _partialProcs["From"].FormatString(collectionTbl)
+                         + _partialProcs["Where"].FormatString(parentTypeName + "Id = " + parentId);
 
 
             _lastQueryExcuted = query;
@@ -2126,8 +2149,8 @@ namespace NostreetsORM
             Type listType = parent.GetProperties().FirstOrDefault(a => a.PropertyType.IsCollection() && a.PropertyType.GetTypeOfT() == child).PropertyType;
 
             string collectionTbl = parent.Name + "_" + child.Name + "Collections",
-                   query = _partialProcs["DeleteRowsStatement"].FormatString(collectionTbl)
-                         + _partialProcs["WhereStatement"].FormatString("{0}Id = {2} AND {1}Id = {3}".FormatString(parent.Name, child.Name, parentId.ToString(), childId.ToString()));
+                   query = _partialProcs["DeleteRows"].FormatString(collectionTbl)
+                         + _partialProcs["Where"].FormatString("{0}Id = {2} AND {1}Id = {3}".FormatString(parent.Name, child.Name, parentId.ToString(), childId.ToString()));
 
 
 
@@ -2146,9 +2169,9 @@ namespace NostreetsORM
             {
                 List<object> tableObjs = null;
                 Type tableType = GetNormalizedSchema(type).GetType();
-                string query = _partialProcs["SelectStatement"].FormatString("*")
-                                    + _partialProcs["FromStatement"].FormatString(GetTableName(type))
-                                    + _partialProcs["WhereStatement"].FormatString(GetPKOfTable(type)
+                string query = _partialProcs["Select"].FormatString("*")
+                                    + _partialProcs["From"].FormatString(GetTableName(type))
+                                    + _partialProcs["Where"].FormatString(GetPKOfTable(type)
                                     + " IN (" + String.Join(", ", ids) + ") ");
 
 
@@ -2190,9 +2213,9 @@ namespace NostreetsORM
             PropertyInfo[] baseProps = type.GetProperties();
 
 
-            string query = _partialProcs["SelectStatement"].FormatString("*")
-                            + _partialProcs["FromStatement"].FormatString(GetTableName(type))
-                            + _partialProcs["WhereStatement"].FormatString(GetPKOfTable(type)
+            string query = _partialProcs["Select"].FormatString("*")
+                            + _partialProcs["From"].FormatString(GetTableName(type))
+                            + _partialProcs["Where"].FormatString(GetPKOfTable(type)
                             + " IN (" + String.Join(", ", ids) + ") ");
 
 
@@ -2223,8 +2246,8 @@ namespace NostreetsORM
 
 
 
-            query = _partialProcs["DeleteRowsStatement"].FormatString(GetTableName(type))
-                    + _partialProcs["WhereStatement"].FormatString(GetPKOfTable(type)
+            query = _partialProcs["DeleteRows"].FormatString(GetTableName(type))
+                    + _partialProcs["Where"].FormatString(GetPKOfTable(type)
                     + " IN (" + String.Join(", ", ids) + ") ");
 
 
@@ -2255,9 +2278,9 @@ namespace NostreetsORM
             string childName = childType.Name.SafeName(),
                    parentName = parentType.Name.SafeName();
 
-            string query = _partialProcs["SelectStatement"].FormatString(childName + "Id")
-                         + _partialProcs["FromStatement"].FormatString(parentName + "_" + childName + "Collections")
-                         + _partialProcs["WhereStatement"].FormatString(parentName + "Id = " + parentId);
+            string query = _partialProcs["Select"].FormatString(childName + "Id")
+                         + _partialProcs["From"].FormatString(parentName + "_" + childName + "Collections")
+                         + _partialProcs["Where"].FormatString(parentName + "Id = " + parentId);
 
 
 
@@ -2286,8 +2309,8 @@ namespace NostreetsORM
             if (!propType.IsSystemType())
                 objIds = GetCollectionIds(parentId, parentType, propType);
 
-            string query = _partialProcs["DeleteRowsStatement"].FormatString(parentName = '_' + property.Name + '_' + childTypeName + "Collections")
-                         + _partialProcs["WhereStatement"].FormatString(parentName + "Id = " + parentId);
+            string query = _partialProcs["DeleteRows"].FormatString(parentName = '_' + property.Name + '_' + childTypeName + "Collections")
+                         + _partialProcs["Where"].FormatString(parentName + "Id = " + parentId);
 
 
 
