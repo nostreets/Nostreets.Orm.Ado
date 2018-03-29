@@ -2065,26 +2065,32 @@ namespace NostreetsORM
 
         private void InsertSerializedCollection(Type parentType, PropertyInfo property, object parentId, string serializedCollection)
         {
-            string parentTypeName = parentType.Name.SafeName(),
-                   childTypeName = property.PropertyType.GetTypeOfT().Name.SafeName();
+            if (GetSerializedCollection(parentId, parentType, property) != null)
+                UpdateSerializedCollection(parentType, property, parentId, serializedCollection);
 
-            string collectionTbl = parentTypeName + '_' + property.Name + '_' + childTypeName + "Collections";
-            Type listType = parentType.GetProperties().FirstOrDefault(a => a.PropertyType.IsCollection() && a == property).PropertyType;
+            else
+            {
+                string parentTypeName = parentType.Name.SafeName(),
+                 childTypeName = property.PropertyType.GetTypeOfT().Name.SafeName(),
+                 collectionTbl = parentTypeName + '_' + property.Name + '_' + childTypeName + "Collections";
 
-            _lastQueryExcuted = "dbo." + collectionTbl + "_Insert";
 
-            Instance.ExecuteNonQuery(() => Connection, "dbo." + collectionTbl + "_Insert",
-                   param =>
-                   {
-                       for (int i = 0; i < 2; i++)
+                _lastQueryExcuted = "dbo." + collectionTbl + "_Insert";
+
+                Instance.ExecuteNonQuery(() => Connection, "dbo." + collectionTbl + "_Insert",
+                       param =>
                        {
-                           if (i == 0)
-                               param.Add(new SqlParameter(parentTypeName + "Id", parentId));
+                           for (int i = 0; i < 2; i++)
+                           {
+                               if (i == 0)
+                                   param.Add(new SqlParameter(parentTypeName + "Id", parentId));
 
-                           else
-                               param.Add(new SqlParameter("Serialized" + childTypeName + "Collections", serializedCollection));
-                       }
-                   }, null, null, null);
+                               else
+                                   param.Add(new SqlParameter("Serialized" + childTypeName + "Collections", serializedCollection));
+                           }
+                       }, null, null, null);
+            } 
+
         }
 
         private void UpdateSerializedCollection(Type parentType, PropertyInfo property, object parentId, string serializedCollection)
