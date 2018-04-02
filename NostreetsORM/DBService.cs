@@ -2477,12 +2477,20 @@ namespace NostreetsORM
             Delete(_type, id);
         }
 
-        public object Get(object id)
+        public object Get(object id, Converter<object, object> converter)
         {
             if (id.GetType() != _idType)
                 throw new Exception("id is not the right Type and cannot Get...");
 
-            return Get(_type, id);
+            return (converter == null) 
+                    ? Get(_type, id) 
+                    : converter(Get(_type, id));
+
+        }
+
+        public object Get(object id)
+        {
+            return Get(id, null);
         }
 
         public object Insert(object model)
@@ -2582,13 +2590,23 @@ namespace NostreetsORM
 
         public T Get(object id)
         {
+            return Get(id, null);
+        }
+
+        public T Get(object id, Converter<T, T> converter)
+        {
             T result = default(T);
 
             object item = _baseSrv.Get(id);
 
-            result = (item == null) ? null : (T)item;
+            result = (item == null) 
+                        ? null 
+                        : (converter == null) 
+                        ? (T)item 
+                        : converter((T)item);
 
             return result;
+
         }
 
         public object Insert(T model)
@@ -2661,15 +2679,14 @@ namespace NostreetsORM
 
         private DBService<T> _baseSrv = null;
 
+        public T Get(IdType id, Converter<T, T> converter)
+        {
+            return _baseSrv.Get(id, converter);
+        }
+
         public T Get(IdType id)
         {
-            T result = default(T);
-
-            object item = _baseSrv.Get(id);
-
-            result = (item == null) ? null : (T)item;
-
-            return result;
+            return Get(id);
         }
 
         public IdType Insert(T model)
@@ -2763,15 +2780,14 @@ namespace NostreetsORM
 
         private DBService<T, IdType> _baseSrv = null;
 
+        public T Get(IdType id, Converter<T, T> converter)
+        {
+            return _baseSrv.Get(id, converter);
+        }
+
         public T Get(IdType id)
         {
-            T result = default(T);
-
-            T item = _baseSrv.Get(id);
-
-            result = (item == null) ? null : item;
-
-            return result;
+            return Get(id, null);
         }
 
         public IdType Insert(T model)
