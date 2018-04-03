@@ -2692,7 +2692,7 @@ namespace NostreetsORM
 
         public T Get(IdType id)
         {
-            return Get(id);
+            return Get(id, null);
         }
 
         public IdType Insert(T model)
