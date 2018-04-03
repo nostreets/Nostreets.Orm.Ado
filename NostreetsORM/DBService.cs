@@ -151,8 +151,8 @@ namespace NostreetsORM
             _partialProcs.Add("InsertWithNewIDProcedure", 
                 "CREATE PROC [dbo].[{0}_Insert] {1} As Begin Declare @NewId {2} Insert Into [dbo].{0}({3}){5} Values({4}) Set @NewId = COALESCE(SCOPE_IDENTITY(), @@IDENTITY) {6} Select @NewId End");
 
-            _partialProcs.Add("InsertWithIDProcedure", 
-                "CREATE PROC [dbo].[{0}_Insert] {1} As Begin Insert Into [dbo].{0}({2}) Values({3}) End");
+            _partialProcs.Add("InsertWithIDProcedure",
+                "CREATE PROC [dbo].[{0}_Insert] {1} AS BEGIN IF NOT EXISTS( SELECT * FROM {0} WHERE {0}.{4} = {5}) BEGIN INSERT INTO [dbo].{0}({2}) VALUES({3}) END ELSE BEGIN UPDATE {0} SET {6} END END");
 
             _partialProcs.Add("UpdateProcedure", 
                 "CREATE PROC [dbo].[{0}_Update] {1} As Begin {2} End");
@@ -612,16 +612,14 @@ namespace NostreetsORM
             if (prefix == null)
                 throw new Exception("prefix cannot be null...");
 
-
-
-            //prefix = prefix.SafeName();
             Type collType = type.GetTypeOfT();
             string skimmedPrefix = prefix.Split('_')[0],
                    query = null,
                    inputParams = "@{2}Id {1}, @{0}" + ((collType.IsSystemType()) ? "" : "Id") + " {3}",
                    columns = "[{1}Id], [{0}" + ((collType.IsSystemType()) ? "" : "Id") + "] ",
                    values = "@{1}Id, @{0}" + ((collType.IsSystemType()) ? "" : "Id"),
-                   select = "{0}.[{2}Id], {0}.[{1}" + ((collType.IsSystemType()) ? "" : "Id") + "]";
+                   select = "{0}.[{2}Id], {0}.[{1}" + ((collType.IsSystemType()) ? "" : "Id") + "]",
+                   update = "[{0}" + ((collType.IsSystemType()) ? "" : "Id") + "] = @{0}" + ((collType.IsSystemType()) ? "" : "Id");
 
             inputParams = inputParams.FormatString(
                                 ((collType.IsSystemType())
@@ -633,6 +631,12 @@ namespace NostreetsORM
                                     ? DeterminSQLType(typeof(string))
                                     : DeterminSQLType(typeof(int)))
                            );
+
+            update = update.FormatString(
+                            ((collType.IsSystemType())
+                                ? "Serialized" + GetTableName(type)
+                                : collType.Name));
+
 
             columns = columns.FormatString(
                             ((collType.IsSystemType())
@@ -656,7 +660,14 @@ namespace NostreetsORM
             switch (template.Key)
             {
                 case "InsertWithID":
-                    query = template.Value.FormatString(GetTableName(type, prefix), inputParams, columns, values);
+                    query = template.Value.FormatString(
+                                            GetTableName(type, prefix)
+                                            , inputParams
+                                            , columns
+                                            , values
+                                            , "[" + skimmedPrefix + "Id]"
+                                            , "@"+ skimmedPrefix + "Id"
+                                            , update);
                     break;
 
                 case "SelectAll":
@@ -683,16 +694,11 @@ namespace NostreetsORM
                    columns = null,
                    values = null,
                    select = null;
-            //joins = null,
-            //deletes = null,
-            //updatesParams = null;
 
             inputParams = "@Value " + DeterminSQLType(typeof(string));
             columns = "Value";
             values = "@Value";
             select = GetTableName(type) + ".[Id], " + GetTableName(type) + ".[Value]";
-            //updatesParams = "@Id " + DeterminSQLType(typeof(int)) + ", @Value " + DeterminSQLType(typeof(string)) + " = Null";
-
 
             switch (template.Key)
             {
