@@ -1967,13 +1967,17 @@ namespace NostreetsORM
                       param =>
                       {
                           PropertyInfo[] props = type.GetProperties();
+                          bool needId = NeedsIdProp(type);
 
-                          if (NeedsIdProp(type))
+                          if (needId)
                               param.Add(new SqlParameter("Id", id));
 
                           foreach (PropertyInfo prop in props)
                           {
-                              if (prop.PropertyType.IsCollection())
+                              if (!needId && prop == props[pkOrdinal])
+                                  param.Add(new SqlParameter(prop.Name, id));
+
+                              else if (prop.PropertyType.IsCollection())
                                   continue;
 
                               else if (prop.PropertyType.IsEnum)
