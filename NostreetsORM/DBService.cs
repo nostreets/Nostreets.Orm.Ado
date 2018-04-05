@@ -148,22 +148,22 @@ namespace NostreetsORM
             if (_partialProcs == null)
                 _partialProcs = new Dictionary<string, string>();
 
-            _partialProcs.Add("InsertWithNewIDProcedure", 
+            _partialProcs.Add("InsertWithNewIDProcedure",
                 "CREATE PROC [dbo].[{0}_Insert] {1} As Begin Declare @NewId {2} Insert Into [dbo].{0}({3}){5} Values({4}) Set @NewId = COALESCE(SCOPE_IDENTITY(), @@IDENTITY) {6} Select @NewId End");
 
             _partialProcs.Add("InsertWithIDProcedure",
                 "CREATE PROC [dbo].[{0}_Insert] {1} AS BEGIN IF NOT EXISTS( SELECT * FROM {0} WHERE {0}.{4} = {5}) BEGIN INSERT INTO [dbo].{0}({2}) VALUES({3}) END ELSE BEGIN UPDATE {0} SET {6} END END");
 
-            _partialProcs.Add("UpdateProcedure", 
+            _partialProcs.Add("UpdateProcedure",
                 "CREATE PROC [dbo].[{0}_Update] {1} As Begin {2} End");
 
-            _partialProcs.Add("DeleteProcedure", 
+            _partialProcs.Add("DeleteProcedure",
                 "CREATE PROC [dbo].[{0}_Delete] @{1} {2} As Begin Delete {0} Where {1} = @{1} {3} End");
 
-            _partialProcs.Add("SelectProcedure", 
+            _partialProcs.Add("SelectProcedure",
                 "CREATE PROC [dbo].[{0}_Select{5}] {3} AS Begin SELECT {1} FROM [dbo].[{0}] {2} {4} End");
 
-            _partialProcs.Add("NullCheckForUpdatePartial", 
+            _partialProcs.Add("NullCheckForUpdatePartial",
                 "If @{2} Is Not Null Begin Update [dbo].{0} {1} End ");
 
 
@@ -173,13 +173,13 @@ namespace NostreetsORM
             _partialProcs.Add("GetAllColumns",
                 "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '{0}'");
 
-            _partialProcs.Add("GetAllProcs", 
+            _partialProcs.Add("GetAllProcs",
                 "SELECT NAME FROM [dbo].[sysobjects] WHERE(type = 'P')");
 
-            _partialProcs.Add("CheckIfTableExist", 
+            _partialProcs.Add("CheckIfTableExist",
                 "Declare @IsTrue int = 0 IF EXISTS(SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = N'{0}') Begin Set @IsTrue = 1 End Select @IsTrue");
 
-            _partialProcs.Add("CreateTableType", 
+            _partialProcs.Add("CreateTableType",
                 "CREATE TYPE [dbo].[{0}] AS TABLE( {1} )");
 
             _partialProcs.Add("CreateTable",
@@ -666,7 +666,7 @@ namespace NostreetsORM
                                             , columns
                                             , values
                                             , "[" + skimmedPrefix + "Id]"
-                                            , "@"+ skimmedPrefix + "Id"
+                                            , "@" + skimmedPrefix + "Id"
                                             , update);
                     break;
 
@@ -1119,8 +1119,8 @@ namespace NostreetsORM
                 else
                 {
                     List<PropertyInfo> baseProps = type.GetProperties().ToList();
-                    List<PropertyInfo> includedProps = (_propertiesIngored != null && _propertiesIngored.Count > 0 && _propertiesIngored[type] != null && _propertiesIngored[type].Length > 0) 
-                                                            ? baseProps.Where(a => !_propertiesIngored[type].Contains(a)).ToList() 
+                    List<PropertyInfo> includedProps = (_propertiesIngored != null && _propertiesIngored.Count > 0 && _propertiesIngored[type] != null && _propertiesIngored[type].Length > 0)
+                                                            ? baseProps.Where(a => !_propertiesIngored[type].Contains(a)).ToList()
                                                             : baseProps;
 
                     List<string> oldColumns = GetOldColumns(type);
@@ -1755,7 +1755,7 @@ namespace NostreetsORM
                     tableObj = DataMapper.MapToObject(reader, tableType);
                 });
 
-            if (tableObj.GetPropertyValue(pkName) != null || 
+            if (tableObj.GetPropertyValue(pkName) != null ||
                (tableObj.GetPropertyValue(pkName).IsNumeric() && (int)tableObj.GetPropertyValue(pkName) != 0))
 
                 result = InstantateFromTable(type, tableObj);
@@ -2099,7 +2099,7 @@ namespace NostreetsORM
                                    param.Add(new SqlParameter("Serialized" + childTypeName + "Collections", serializedCollection));
                            }
                        }, null, null, null);
-            } 
+            }
 
         }
 
@@ -2492,8 +2492,8 @@ namespace NostreetsORM
             if (id.GetType() != _idType)
                 throw new Exception("id is not the right Type and cannot Get...");
 
-            return (converter == null) 
-                    ? Get(_type, id) 
+            return (converter == null)
+                    ? Get(_type, id)
                     : converter(Get(_type, id));
 
         }
@@ -2515,6 +2515,54 @@ namespace NostreetsORM
             return id;
         }
 
+        public object Insert(object model, Converter<object, object> converter)
+        {
+            if (model.GetType() != _type)
+                throw new Exception("model's Type has to be the type of T in DBService<T> to be able to Insert...");
+
+            object id = null;
+            Dictionary<KeyValuePair<Type, PropertyInfo>, KeyValuePair<object, object[]>> relations = new Dictionary<KeyValuePair<Type, PropertyInfo>, KeyValuePair<object, object[]>>();
+            id = Insert(converter(model), _type, ref relations);
+
+            return id;
+        }
+
+        public object[] Insert(IEnumerable<object> collection)
+        {
+            if (collection.GetTypeOfT() != _type)
+                throw new Exception("model's Type has to be the type of T in DBService<T> to be able to Insert...");
+
+            if (collection.Count() == 0)
+                throw new Exception("collection cannot be empty to be able to Insert...");
+
+
+            List<object> ids = new List<object>();
+            Dictionary<KeyValuePair<Type, PropertyInfo>, KeyValuePair<object, object[]>> relations = new Dictionary<KeyValuePair<Type, PropertyInfo>, KeyValuePair<object, object[]>>();
+
+            foreach (object model in collection)
+                ids.Add(Insert(model, _type, ref relations));
+
+            return ids.ToArray();
+        }
+
+        public object[] Insert(IEnumerable<object> collection, Converter<object, object> converter)
+        {
+            if (collection.GetTypeOfT() != _type)
+                throw new Exception("model's Type has to be the type of T in DBService<T> to be able to Insert...");
+
+            if (collection.Count() == 0)
+                throw new Exception("collection cannot be empty to be able to Insert...");
+
+
+            List<object> ids = new List<object>();
+            Dictionary<KeyValuePair<Type, PropertyInfo>, KeyValuePair<object, object[]>> relations = new Dictionary<KeyValuePair<Type, PropertyInfo>, KeyValuePair<object, object[]>>();
+
+            foreach (object model in collection)
+                ids.Add(Insert(converter(model), _type, ref relations));
+
+            return ids.ToArray();
+        }
+
         public void Update(object model)
         {
             if (model.GetType() != _type)
@@ -2527,6 +2575,56 @@ namespace NostreetsORM
                 throw new Exception("model's Id propery has to equal the same Type as the Id column in the Database to be able to Update...");
 
             Update(model, model.GetPropertyValue("Id"), _type);
+        }
+
+        public void Update(object model, Converter<object, object> converter)
+        {
+            if (model.GetType() != _type)
+                throw new Exception("model's Type has to be the type of T in DBService<T> to be able to Update...");
+
+            if (model.GetPropertyValue("Id") == null)
+                throw new Exception("model's Id propery has to equal an PK in the Database to be able to Update...");
+
+            if (model.GetPropertyValue("Id").GetType() != _idType)
+                throw new Exception("model's Id propery has to equal the same Type as the Id column in the Database to be able to Update...");
+
+            Update(converter(model), model.GetPropertyValue("Id"), _type);
+        }
+
+        public void Update(IEnumerable<object> collection)
+        {
+            if (collection.GetTypeOfT() != _type)
+                throw new Exception("model's Type has to be the type of T in DBService<T> to be able to Update...");
+
+            if (collection.Count() == 0)
+                throw new Exception("collection cannot be empty to be able to Update...");
+
+            if (collection.ElementAt(0).GetPropertyValue("Id") == null)
+                throw new Exception("model's Id propery has to equal an PK in the Database to be able to Update...");
+
+            if (collection.ElementAt(0).GetPropertyValue("Id").GetType() != _idType)
+                throw new Exception("model's Id propery has to equal the same Type as the Id column in the Database to be able to Update...");
+
+            foreach (object model in collection)
+                Update(model, model.GetPropertyValue("Id"), _type);
+        }
+
+        public void Update(IEnumerable<object> collection, Converter<object, object> converter)
+        {
+            if (collection.GetTypeOfT() != _type)
+                throw new Exception("model's Type has to be the type of T in DBService<T> to be able to Update...");
+
+            if (collection.Count() == 0)
+                throw new Exception("collection cannot be empty to be able to Update...");
+
+            if (collection.ElementAt(0).GetPropertyValue("Id") == null)
+                throw new Exception("model's Id propery has to equal an PK in the Database to be able to Update...");
+
+            if (collection.ElementAt(0).GetPropertyValue("Id").GetType() != _idType)
+                throw new Exception("model's Id propery has to equal the same Type as the Id column in the Database to be able to Update...");
+
+            foreach (object model in collection)
+                Update(converter(model), model.GetPropertyValue("Id"), _type);
         }
 
         public IEnumerable<object> Where(Func<object, bool> predicate)
@@ -2546,6 +2644,18 @@ namespace NostreetsORM
         public object FirstOrDefault(Func<object, bool> predicate)
         {
             return Where(predicate).FirstOrDefault();
+        }
+
+        public void Delete(IEnumerable<object> ids)
+        {
+            if (ids == null)
+                throw new Exception("collection cannot be null to be able to Insert...");
+
+            if (ids.Count() == 0)
+                throw new Exception("collection cannot be empty to be able to Insert...");
+
+            foreach (object id in ids)
+                Delete(id);
         }
 
         #endregion
@@ -2609,10 +2719,10 @@ namespace NostreetsORM
 
             object item = _baseSrv.Get(id);
 
-            result = (item == null) 
-                        ? null 
-                        : (converter == null) 
-                        ? (T)item 
+            result = (item == null)
+                        ? null
+                        : (converter == null)
+                        ? (T)item
                         : converter((T)item);
 
             return result;
@@ -2650,6 +2760,87 @@ namespace NostreetsORM
         public T FirstOrDefault(Func<T, bool> predicate)
         {
             return Where(predicate).FirstOrDefault();
+        }
+
+        public object Insert(T model, Converter<T, T> converter)
+        {
+            if (model == null)
+                throw new Exception("model cannot be null to be able to Insert...");
+
+            return Insert(converter(model));
+        }
+
+        public void Update(T model, Converter<T, T> converter)
+        {
+            Update(converter(model));
+        }
+
+        public object[] Insert(IEnumerable<T> collection)
+        {
+            if (collection == null)
+                throw new Exception("collection cannot be null to be able to Insert...");
+
+            if (collection.Count() == 0)
+                throw new Exception("collection cannot be empty to be able to Insert...");
+
+
+            List<object> list = new List<object>();
+            foreach (T model in collection)
+                list.Add(Insert(model));
+
+            return list.ToArray();
+        }
+
+        public object[] Insert(IEnumerable<T> collection, Converter<T, T> converter)
+        {
+            if (collection == null)
+                throw new Exception("collection cannot be null to be able to Insert...");
+
+            if (collection.Count() == 0)
+                throw new Exception("collection cannot be empty to be able to Insert...");
+
+
+            List<object> list = new List<object>();
+            foreach (T model in collection)
+                list.Add(Insert(converter(model)));
+
+            return list.ToArray();
+        }
+
+        public void Update(IEnumerable<T> collection)
+        {
+            if (collection == null)
+                throw new Exception("collection cannot be null to be able to Insert...");
+
+            if (collection.Count() == 0)
+                throw new Exception("collection cannot be empty to be able to Insert...");
+
+            foreach (T model in collection)
+                Update(model);
+        }
+
+        public void Update(IEnumerable<T> collection, Converter<T, T> converter)
+        {
+            if (collection == null)
+                throw new Exception("collection cannot be null to be able to Insert...");
+
+            if (collection.Count() == 0)
+                throw new Exception("collection cannot be empty to be able to Insert...");
+
+            foreach (T model in collection)
+                Update(converter(model));
+        }
+
+        public void Delete(IEnumerable<object> ids)
+        {
+            if (ids == null)
+                throw new Exception("collection cannot be null to be able to Insert...");
+
+            if (ids.Count() == 0)
+                throw new Exception("collection cannot be empty to be able to Insert...");
+
+            foreach (object id in ids)
+                Delete(id);
         }
     }
 
@@ -2764,6 +2955,90 @@ namespace NostreetsORM
         {
             return Where(predicate).FirstOrDefault();
         }
+
+        public IdType Insert(T model, Converter<T, T> converter)
+        {
+            if (model == null)
+                throw new Exception("model cannot be null to be able to Insert...");
+
+            return Insert(converter(model));
+        }
+
+        public IdType[] Insert(IEnumerable<T> collection)
+        {
+            if (collection == null)
+                throw new Exception("collection cannot be null to be able to Insert...");
+
+            if (collection.Count() == 0)
+                throw new Exception("collection cannot be empty to be able to Insert...");
+
+
+            List<IdType> list = new List<IdType>();
+            foreach (T model in collection)
+                list.Add(Insert(model));
+
+            return list.ToArray();
+        }
+
+        public IdType[] Insert(IEnumerable<T> collection, Converter<T, T> converter)
+        {
+            if (collection == null)
+                throw new Exception("collection cannot be null to be able to Insert...");
+
+            if (collection.Count() == 0)
+                throw new Exception("collection cannot be empty to be able to Insert...");
+
+
+            List<IdType> list = new List<IdType>();
+            foreach (T model in collection)
+                list.Add(Insert(converter(model)));
+
+            return list.ToArray();
+        }
+
+        public void Update(IEnumerable<T> collection)
+        {
+            if (collection == null)
+                throw new Exception("collection cannot be null to be able to Insert...");
+
+            if (collection.Count() == 0)
+                throw new Exception("collection cannot be empty to be able to Insert...");
+
+            foreach (T model in collection)
+                Update(model);
+        }
+
+        public void Update(IEnumerable<T> collection, Converter<T, T> converter)
+        {
+            if (collection == null)
+                throw new Exception("collection cannot be null to be able to Insert...");
+
+            if (collection.Count() == 0)
+                throw new Exception("collection cannot be empty to be able to Insert...");
+
+            foreach (T model in collection)
+                Update(converter(model));
+        }
+
+        public void Update(T model, Converter<T, T> converter)
+        {
+            if (model == null)
+                throw new Exception("collection cannot be null to be able to Insert...");
+
+            Update(converter(model));
+        }
+
+        public void Delete(IEnumerable<IdType> ids)
+        {
+            if (ids == null)
+                throw new Exception("collection cannot be null to be able to Insert...");
+
+            if (ids.Count() == 0)
+                throw new Exception("collection cannot be empty to be able to Insert...");
+
+            foreach (IdType id in ids)
+                Delete(id);
+        }
     }
 
     public class DBService<T, IdType, AddType, UpdateType> : IDBService<T, IdType, AddType, UpdateType> where T : class
@@ -2872,6 +3147,48 @@ namespace NostreetsORM
         public T FirstOrDefault(Func<T, bool> predicate)
         {
             return Where(predicate).FirstOrDefault();
+        }
+
+        public IdType Insert(T model, Converter<T, T> converter)
+        {
+            throw new NotImplementedException();
+        }
+
+        public IdType[] Insert(IEnumerable<T> collection)
+        {
+            throw new NotImplementedException();
+        }
+
+        public IdType[] Insert(IEnumerable<T> collection, Converter<T, T> converter)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void Update(IEnumerable<T> collection)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void Update(IEnumerable<T> collection, Converter<T, T> converter)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void Update(T model, Converter<T, T> converter)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void Delete(IEnumerable<IdType> ids)
+        {
+            if (ids == null)
+                throw new Exception("collection cannot be null to be able to Insert...");
+
+            if (ids.Count() == 0)
+                throw new Exception("collection cannot be empty to be able to Insert...");
+
+            foreach (IdType id in ids)
+                Delete(id);
         }
     }
 
