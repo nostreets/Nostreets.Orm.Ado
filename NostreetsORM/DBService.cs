@@ -1537,7 +1537,8 @@ namespace NostreetsORM
             else if (ShouldNormalize(type))
             {
 
-                List<string> columnsInTable = Instance.GetSchema(() => Connection, GetTableName(type));
+                #region Declaration
+                KeyValuePair<string, Type>[] columnsInTable = Instance.GetSchema(() => Connection, GetTableName(type));
                 List<PropertyInfo> baseProps = type.GetProperties().ToList(),
                                    excludedProps = type.GetPropertiesByAttribute<NotMappedAttribute>(),
                                    includedProps = baseProps.Where(a => (excludedProps != null && !excludedProps.Contains(a) && !a.PropertyType.IsCollection()) || !a.PropertyType.IsCollection()).ToList();
@@ -1558,15 +1559,20 @@ namespace NostreetsORM
 
                     includedProps.Prepend(type.AddProperty(typeof(int), "Id").GetProperty("Id"));
                 }
+                #endregion
 
-
-                foreach (string col in columnsInTable)
-                    if (!includedProps.Any(a => ((ShouldNormalize(a.PropertyType)) ? a.Name + "Id" : a.Name) == col))
+                foreach (KeyValuePair<string, Type> col in columnsInTable)
+                    if (!includedProps.Any(a => ((ShouldNormalize(a.PropertyType)) ? a.Name + "Id" : a.Name) == col.Key))
+                        return false;
+                    else if (!includedProps.Any(a => ((ShouldNormalize(a.PropertyType)) ? a.PropertyType : typeof(int)) == col.Value))
                         return false;
 
 
+
                 foreach (PropertyInfo prop in includedProps)
-                    if (!columnsInTable.Any(a => ((ShouldNormalize(prop.PropertyType)) ? prop.Name + "Id" : prop.Name) == a))
+                    if (!columnsInTable.Any(a => ((ShouldNormalize(prop.PropertyType)) ? prop.Name + "Id" : prop.Name) == a.Key))
+                        return false;
+                    else if (!columnsInTable.Any(a => ((ShouldNormalize(prop.PropertyType)) ? prop.PropertyType : typeof(int)) == a.Value))
                         return false;
 
 
