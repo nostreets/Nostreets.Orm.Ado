@@ -73,20 +73,21 @@ namespace NostreetsORM
         }
 
 
-        public Dictionary<Type, Type[]> TablesAccessed
+        public List<EntityMap> TablesAccessed
         {
             get
             {
-                Dictionary<Type, Type[]> subTables = GetSubTablesAccessed();
-                subTables = subTables.Prepend(_type, GetRelationships(_type));
+                //Dictionary<Type, Type[]> subTables = GetSubTablesAccessed();
+                //subTables = subTables.Prepend(_type, GetRelationships(_type));
+
+
+
                 return subTables;
             }
         }
 
-        public Dictionary<Type, PropertyInfo[]> PropertiesIngored => _propertiesIngored;
         public string LastQueryExcuted => _lastQueryExcuted;
         public Type IdType => _idType;
-
 
         private bool _tableCreation = false,
                      _nullLock = false;
@@ -94,7 +95,7 @@ namespace NostreetsORM
         private Type _type = null;
         private Dictionary<string, string> _partialProcs = null,
                                            _procTemplates = null;
-        private Dictionary<Type, PropertyInfo[]> _propertiesIngored = null;
+        private Dictionary<Type, PropertyInfo[]> _ingoredProps = null;
         private string _lastQueryExcuted = null;
         private Type _idType = null;
 
@@ -114,6 +115,8 @@ namespace NostreetsORM
             _type = type;
             _nullLock = nullLock;
             _idType = type.GetProperties()[GetPKOrdinalOfType(type)].PropertyType;
+            GetIngoredProperties(_type);
+
 
             //MapAllTypes().Log();
             //QueryProvider = new SqlQueryProvider(Connection, XmlMapping.FromXml(MapAllTypes()), QueryPolicy.Default);
@@ -223,7 +226,7 @@ namespace NostreetsORM
                 };
         }
 
-        private string MapAllTypes()
+        private string GetMappedTypesXML()
         {
 
             List<EntityMap> result = new List<EntityMap>();
@@ -235,19 +238,32 @@ namespace NostreetsORM
             return result.XmlSerialize();
         }
 
-        private void MapType(Type p, ref List<EntityMap> entities)
+        private List<EntityMap> GetMappedTypes()
         {
-            PropertyInfo[] relations = p.GetProperties().Where(a => GetRelationships(p) != null && GetRelationships(p).Any(b => b == a.PropertyType)).ToArray();
-            Func<Type, EntityColumn[]> getColumns = (a) =>
+            List<EntityMap> result = new List<EntityMap>();
+
+            MapType(_type, ref result);
+
+            return result;
+        }
+
+        private void MapType(Type type, ref List<EntityMap> entities)
+        {
+            PropertyInfo[] relations = type.GetProperties().Where(a => GetRelationships(type) != null && GetRelationships(type).Any(b => b == a.PropertyType)).ToArray();
+
+            Func<EntityColumn[]> getColumns = () =>
             {
                 List<EntityColumn> list = new List<EntityColumn>();
-                PropertyInfo[] props = a.GetProperties();
-                foreach (PropertyInfo prop in props)
+                List<PropertyInfo> baseProps = type.GetProperties().ToList();
+                PropertyInfo pk = baseProps[GetPKOrdinalOfType(type)];
+
+                foreach (PropertyInfo prop in baseProps)
                 {
-                    if (prop.PropertyType.IsCollection() || (PropertiesIngored.ContainsKey(a) && PropertiesIngored[a].Any(c => c == prop)))
+
+                    if (prop.PropertyType.IsCollection() || (_ingoredProps.ContainsKey(a) && _ingoredProps[a].Contains(prop)))
                         continue;
 
-                    bool isPk = (props[GetPKOrdinalOfType(a)] == prop) ? true : false;
+                    bool isPk = (pk == prop) ? true : false;
                     list.Add(new EntityColumn(
                           prop.Name
                         , ShouldNormalize(prop.PropertyType) ? prop.Name + "Id" : prop.Name
@@ -259,17 +275,19 @@ namespace NostreetsORM
 
                 return list.ToArray();
             };
-            Func<Type, EntityAssociation[]> getAssociations = (a) =>
+            Func<EntityAssociation[]> getAssociations = () =>
             {
                 List<EntityAssociation> list = new List<EntityAssociation>();
-                PropertyInfo[] props = a.GetProperties().Where(
-                                               b => ShouldNormalize(b.PropertyType) && (!PropertiesIngored.ContainsKey(a) || PropertiesIngored[a].Any(c => c != b))
+                PropertyInfo[] props = type.GetProperties().Where(
+                                               b => ShouldNormalize(b.PropertyType) && (!_ingoredProps.ContainsKey(type) || _ingoredProps[type].Any(c => c != b))
                                             ).ToArray();
+                PropertyInfo pk = props[GetPKOrdinalOfType(type)];
+
 
 
                 foreach (PropertyInfo prop in props)
                 {
-                    bool isPk = (props[GetPKOrdinalOfType(a)] == prop) ? true : false;
+                    bool isPk = (pk == prop) ? true : false;
                     list.Add(new EntityAssociation(
                           prop.Name
                         , prop.Name + "Id"
@@ -284,17 +302,17 @@ namespace NostreetsORM
 
 
             entities.Add(new EntityMap(
-                        new EntityTable(GetTableName(p))
-                        , getColumns(p)
-                        , getAssociations(p)
-                        , p.Name));
+                        new EntityTable(GetTableName(type))
+                        , getColumns()
+                        , getAssociations()
+                        , type.Name));
 
 
             if (relations != null)
                 foreach (PropertyInfo relation in relations)
                 {
                     if (relation.PropertyType.IsCollection())
-                        MapCollection(relation.PropertyType, ref entities, p, relation.Name);
+                        MapCollection(relation.PropertyType, ref entities, type, relation.Name);
                     else
                         MapType(relation.PropertyType, ref entities);
                 }
@@ -332,6 +350,22 @@ namespace NostreetsORM
 
         }
 
+        private void GetIngoredProperties(Type type)
+        {
+            List<PropertyInfo> excludedProps = _type.GetPropertiesByAttribute<NotMappedAttribute>();
+            Type[] relations = GetRelationships(_type);
+
+            if (excludedProps != null)
+            {
+                if (_ingoredProps == null)
+                    _ingoredProps = new Dictionary<Type, PropertyInfo[]>();
+                _ingoredProps.AddValues(excludedProps);
+            }
+
+            foreach (Type r in relations)
+                GetIngoredProperties(r);
+        }
+
         private bool ShouldNormalize(Type type)
         {
             return (type.IsSystemType())
@@ -362,11 +396,6 @@ namespace NostreetsORM
 
             return result;
 
-        }
-
-        private Type GetPKOfType(Type type)
-        {
-            return type.GetProperties()[GetPKOrdinalOfType(type)].PropertyType;
         }
 
         private int GetPKOrdinalOfType(Type type)
@@ -512,7 +541,7 @@ namespace NostreetsORM
 
             Type[] result = null;
             List<Type> list = null;
-            List<PropertyInfo> relations = type.GetProperties().Where(a => ShouldNormalize(a.PropertyType) || a.PropertyType.IsCollection()).ToList();
+            List<PropertyInfo> relations = type.GetProperties().Where(a => ShouldNormalize(a.PropertyType) || (a.PropertyType != typeof(string) && a.PropertyType.IsCollection())).ToList();
 
             if (relations != null && relations.Count > 0)
             {
@@ -555,8 +584,8 @@ namespace NostreetsORM
 
         private void BackupAndDropType(Type type)
         {
-            List<KeyValuePair<Type, Type[]>> tblsToBackUp = TablesAccessed.Where(a => (a.Value != null && a.Value.Any(b => b == type))).ToList() ?? null;
-            Type[] typeRelations = (TablesAccessed.Keys.Contains(type)) ? TablesAccessed[type] : null;
+            List<KeyValuePair<Type, Type[]>> tblsToBackUp = TablesAccessed.Where(a => (a.Association.Length > 0 && a.Association.Any(b => b == type))).ToList() ?? null;
+            Type[] typeRelations = (TablesAccessed.Contains(type)) ? TablesAccessed[type] : null;
 
 
 
@@ -1124,24 +1153,23 @@ namespace NostreetsORM
                 else
                 {
                     List<PropertyInfo> baseProps = type.GetProperties().ToList();
-                    List<PropertyInfo> includedProps = (_propertiesIngored != null && _propertiesIngored.Count > 0 && _propertiesIngored[type] != null && _propertiesIngored[type].Length > 0)
-                                                            ? baseProps.Where(a => !_propertiesIngored[type].Contains(a)).ToList()
+                    List<PropertyInfo> includedProps = (_ingoredProps != null && _ingoredProps.Count > 0 && _ingoredProps[type] != null && _ingoredProps[type].Length > 0)
+                                                            ? baseProps.Where(a => !_ingoredProps[type].Contains(a)).ToList()
                                                             : baseProps;
 
                     List<string> oldColumns = GetOldColumns(type);
                     List<string> matchingColumns = oldColumns.Where(a => includedProps.Any(b => a == ((ShouldNormalize(b.PropertyType)) ? b.Name + "Id" : b.Name))).ToList();
 
+                    Type pkOrdinalType = baseProps.GetPropertyValue(GetPKOrdinalOfType(type)).GetType();
 
                     string columns = String.Join(", ", matchingColumns);
 
-                    query = GetPKOfType(type) == typeof(int) 
-                            ? _partialProcs["IdentityInsert"].FormatString(GetTableName(type), "ON") 
-                            : "";
+                    query = (pkOrdinalType == typeof(int))
+                                ? _partialProcs["IdentityInsert"].FormatString(GetTableName(type), "ON")
+                                : "";
                     query += _partialProcs["InsertInto"].FormatString(GetTableName(type), columns);
                     query += _partialProcs["Select"].FormatString(columns);
                     query += _partialProcs["From"].FormatString("temp" + GetTableName(type));
-
-
                 }
 
                 try
@@ -1553,9 +1581,9 @@ namespace NostreetsORM
 
                 if (excludedProps != null)
                 {
-                    if (_propertiesIngored == null)
-                        _propertiesIngored = new Dictionary<Type, PropertyInfo[]>();
-                    _propertiesIngored.AddValues(excludedProps);
+                    if (_ingoredProps == null)
+                        _ingoredProps = new Dictionary<Type, PropertyInfo[]>();
+                    _ingoredProps.AddValues(excludedProps);
                 }
 
                 if (NeedsIdProp(type))
@@ -1568,32 +1596,23 @@ namespace NostreetsORM
                 }
                 #endregion
 
+                #region Column Checks
                 foreach (KeyValuePair<string, Type> col in columnsInTable)
-                    if (!includedProps.Any(a => ((ShouldNormalize(a.PropertyType)) 
-                                                            ? a.Name + "Id" 
-                                                            : a.Name) == col.Key 
-                                                        && col.Value == ((a.PropertyType.IsNullable()) 
-                                                            ? a.PropertyType.UnderlyingType()
-                                                            : (ShouldNormalize(a.PropertyType))
-                                                            ? typeof(int)
-                                                            : a.PropertyType)))
+                    if (!includedProps.Any(a => ((ShouldNormalize(a.PropertyType)) ? a.Name + "Id" : a.Name) == col.Key))
+                        return false;
+                    else if (!includedProps.Any(a => ((ShouldNormalize(a.PropertyType)) ? a.PropertyType : typeof(int)) == col.Value))
                         return false;
 
 
 
                 foreach (PropertyInfo prop in includedProps)
-                    if (!columnsInTable.Any(a => ((ShouldNormalize(prop.PropertyType)) 
-                                                            ? prop.Name + "Id" 
-                                                            : prop.Name) == a.Key 
-                                                        && a.Value == ((prop.PropertyType.IsNullable())
-                                                            ? prop.PropertyType.UnderlyingType()
-                                                            : (ShouldNormalize(prop.PropertyType))
-                                                            ? typeof(int)
-                                                            : prop.PropertyType)))
+                    if (!columnsInTable.Any(a => ((ShouldNormalize(prop.PropertyType)) ? prop.Name + "Id" : prop.Name) == a.Key))
                         return false;
+                    else if (!columnsInTable.Any(a => ((ShouldNormalize(prop.PropertyType)) ? prop.PropertyType : typeof(int)) == a.Value))
+                        return false;
+                #endregion
 
-
-
+                #region Recursive Type Check
                 if (includedProps.Any(a => ShouldNormalize(a.PropertyType)))
                 {
                     PropertyInfo[] propsToCheck = includedProps.Where(a => ShouldNormalize(a.PropertyType)).DistinctBy(a => a.PropertyType).ToArray();
@@ -1601,8 +1620,9 @@ namespace NostreetsORM
                         if (!CheckIfTypeIsCurrent(propToCheck.PropertyType))
                             return false;
                 }
+                #endregion
 
-
+                #region Collection Checks
                 if (baseProps.Any(a => (excludedProps != null && !excludedProps.Contains(a) && a.PropertyType.IsCollection()) || a.PropertyType.IsCollection()))
                 {
                     PropertyInfo[] propsToCheck = baseProps.Where(a => (excludedProps != null && !excludedProps.Contains(a) && a.PropertyType.IsCollection()) || a.PropertyType.IsCollection()).Distinct().ToArray();
@@ -1617,6 +1637,7 @@ namespace NostreetsORM
                             return false;
                     }
                 }
+                #endregion
             }
 
 
