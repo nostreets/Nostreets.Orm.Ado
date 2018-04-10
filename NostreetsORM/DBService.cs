@@ -105,8 +105,8 @@ namespace NostreetsORM
             _type = type;
             _nullLock = nullLock;
             _idType = type.GetProperties()[GetPKOrdinalOfType(type)].PropertyType;
-
-            GetIngoredProperties(_type);
+            _ignoredProps = GetIngoredProperties(_type);
+            _mappedEntities = GetMappedTypes();
 
 
             //MapAllTypes().Log();
@@ -348,20 +348,20 @@ namespace NostreetsORM
 
         }
 
-        private void GetIngoredProperties(Type type)
+        private Dictionary<Type, PropertyInfo[]> GetIngoredProperties(Type type)
         {
-            List<PropertyInfo> excludedProps = _type.GetPropertiesByAttribute<NotMappedAttribute>();
-            Type[] relations = GetRelationships(_type);
+            Dictionary<Type, PropertyInfo[]> result = new Dictionary<Type, PropertyInfo[]>();
+
+            List<PropertyInfo> excludedProps = type.GetPropertiesByAttribute<NotMappedAttribute>();
+            Type[] relations = GetRelationships(type);
 
             if (excludedProps != null)
-            {
-                if (_ignoredProps == null)
-                    _ignoredProps = new Dictionary<Type, PropertyInfo[]>();
-                _ignoredProps.AddValues(excludedProps);
-            }
+                result.Add(type, excludedProps.ToArray());
 
             foreach (Type r in relations)
-                GetIngoredProperties(r);
+                result.Concat(GetIngoredProperties(r));
+
+            return result;
         }
 
         private bool ShouldNormalize(Type type)
