@@ -364,6 +364,11 @@ namespace NostreetsORM
 
         }
 
+        private Type GetPKOfType(Type type)
+        {
+            return type.GetProperties()[GetPKOrdinalOfType(type)].PropertyType;
+        }
+
         private int GetPKOrdinalOfType(Type type)
         {
             int index = 0,
@@ -1129,7 +1134,9 @@ namespace NostreetsORM
 
                     string columns = String.Join(", ", matchingColumns);
 
-                    query = _partialProcs["IdentityInsert"].FormatString(GetTableName(type), "ON");
+                    query = GetPKOfType(type) == typeof(int) 
+                            ? _partialProcs["IdentityInsert"].FormatString(GetTableName(type), "ON") 
+                            : "";
                     query += _partialProcs["InsertInto"].FormatString(GetTableName(type), columns);
                     query += _partialProcs["Select"].FormatString(columns);
                     query += _partialProcs["From"].FormatString("temp" + GetTableName(type));
@@ -1562,17 +1569,27 @@ namespace NostreetsORM
                 #endregion
 
                 foreach (KeyValuePair<string, Type> col in columnsInTable)
-                    if (!includedProps.Any(a => ((ShouldNormalize(a.PropertyType)) ? a.Name + "Id" : a.Name) == col.Key))
-                        return false;
-                    else if (!includedProps.Any(a => ((ShouldNormalize(a.PropertyType)) ? a.PropertyType : typeof(int)) == col.Value))
+                    if (!includedProps.Any(a => ((ShouldNormalize(a.PropertyType)) 
+                                                            ? a.Name + "Id" 
+                                                            : a.Name) == col.Key 
+                                                        && col.Value == ((a.PropertyType.IsNullable()) 
+                                                            ? a.PropertyType.UnderlyingType()
+                                                            : (ShouldNormalize(a.PropertyType))
+                                                            ? typeof(int)
+                                                            : a.PropertyType)))
                         return false;
 
 
 
                 foreach (PropertyInfo prop in includedProps)
-                    if (!columnsInTable.Any(a => ((ShouldNormalize(prop.PropertyType)) ? prop.Name + "Id" : prop.Name) == a.Key))
-                        return false;
-                    else if (!columnsInTable.Any(a => ((ShouldNormalize(prop.PropertyType)) ? prop.PropertyType : typeof(int)) == a.Value))
+                    if (!columnsInTable.Any(a => ((ShouldNormalize(prop.PropertyType)) 
+                                                            ? prop.Name + "Id" 
+                                                            : prop.Name) == a.Key 
+                                                        && a.Value == ((prop.PropertyType.IsNullable())
+                                                            ? prop.PropertyType.UnderlyingType()
+                                                            : (ShouldNormalize(prop.PropertyType))
+                                                            ? typeof(int)
+                                                            : prop.PropertyType)))
                         return false;
 
 
