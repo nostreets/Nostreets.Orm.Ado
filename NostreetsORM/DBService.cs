@@ -73,18 +73,7 @@ namespace NostreetsORM
         }
 
 
-        public List<EntityMap> TablesAccessed
-        {
-            get
-            {
-                //Dictionary<Type, Type[]> subTables = GetSubTablesAccessed();
-                //subTables = subTables.Prepend(_type, GetRelationships(_type));
-
-
-
-                return subTables;
-            }
-        }
+        public List<EntityMap> TablesAccessed => _mappedEntities;
 
         public string LastQueryExcuted => _lastQueryExcuted;
         public Type IdType => _idType;
@@ -95,9 +84,10 @@ namespace NostreetsORM
         private Type _type = null;
         private Dictionary<string, string> _partialProcs = null,
                                            _procTemplates = null;
-        private Dictionary<Type, PropertyInfo[]> _ingoredProps = null;
+        private Dictionary<Type, PropertyInfo[]> _ignoredProps = null;
         private string _lastQueryExcuted = null;
         private Type _idType = null;
+        private List<EntityMap> _mappedEntities = null;
 
 
         #region Internal Logic
@@ -115,6 +105,7 @@ namespace NostreetsORM
             _type = type;
             _nullLock = nullLock;
             _idType = type.GetProperties()[GetPKOrdinalOfType(type)].PropertyType;
+
             GetIngoredProperties(_type);
 
 
@@ -123,7 +114,7 @@ namespace NostreetsORM
 
 
             bool doesExist = CheckIfTableExist(_type),
-                 isCurrent = TablesAccessed.All(a => CheckIfTypeIsCurrent(a.Key));
+                 isCurrent = TablesAccessed.All(a => CheckIfTypeIsCurrent(a.Type));
 
 
 
@@ -134,15 +125,15 @@ namespace NostreetsORM
             }
             else if (!isCurrent)
             {
-                KeyValuePair<Type, Type[]>[] tablesToUpdate = TablesAccessed.Where(a => !CheckIfTypeIsCurrent(a.Key)).ToArray();
+                IEnumerable<EntityMap> tablesToUpdate = TablesAccessed.Where(a => !CheckIfTypeIsCurrent(a.Type));
 
-                foreach (KeyValuePair<Type, Type[]> tbl in tablesToUpdate)
-                    BackupAndDropType(tbl.Key);
+                foreach (EntityMap tbl in tablesToUpdate)
+                    BackupAndDropType(tbl);
 
                 CreateTable(_type);
 
-                foreach (KeyValuePair<Type, Type[]> tbl in tablesToUpdate)
-                    UpdateTableFromBackup(tbl.Key);
+                foreach (EntityMap tbl in tablesToUpdate)
+                    UpdateTableFromBackup(tbl.Type);
             }
         }
 
@@ -260,7 +251,7 @@ namespace NostreetsORM
                 foreach (PropertyInfo prop in baseProps)
                 {
 
-                    if (prop.PropertyType.IsCollection() || (_ingoredProps.ContainsKey(a) && _ingoredProps[a].Contains(prop)))
+                    if (prop.PropertyType.IsCollection() || (_ignoredProps.ContainsKey(type) && _ignoredProps[type].Contains(prop)))
                         continue;
 
                     bool isPk = (pk == prop) ? true : false;
@@ -279,7 +270,7 @@ namespace NostreetsORM
             {
                 List<EntityAssociation> list = new List<EntityAssociation>();
                 PropertyInfo[] props = type.GetProperties().Where(
-                                               b => ShouldNormalize(b.PropertyType) && (!_ingoredProps.ContainsKey(type) || _ingoredProps[type].Any(c => c != b))
+                                               b => ShouldNormalize(b.PropertyType) && (!_ignoredProps.ContainsKey(type) || _ignoredProps[type].Any(c => c != b))
                                             ).ToArray();
                 PropertyInfo pk = props[GetPKOrdinalOfType(type)];
 
@@ -289,7 +280,8 @@ namespace NostreetsORM
                 {
                     bool isPk = (pk == prop) ? true : false;
                     list.Add(new EntityAssociation(
-                          prop.Name
+                          prop.PropertyType
+                        , prop.Name
                         , prop.Name + "Id"
                         , prop.PropertyType.Name
                         , GetPKOfTable(prop.PropertyType)
@@ -302,7 +294,8 @@ namespace NostreetsORM
 
 
             entities.Add(new EntityMap(
-                        new EntityTable(GetTableName(type))
+                          type
+                        , new EntityTable(GetTableName(type))
                         , getColumns()
                         , getAssociations()
                         , type.Name));
@@ -318,7 +311,7 @@ namespace NostreetsORM
                 }
         }
 
-        private void MapCollection(Type p, ref List<EntityMap> entities, Type parent, string collectionName)
+        private void MapCollection(Type collection, ref List<EntityMap> entities, Type parent, string collectionName)
         {
             Func<Type, EntityColumn[]> getColumns = (a) =>
             {
@@ -328,10 +321,13 @@ namespace NostreetsORM
                 {
                     list.Add(new EntityColumn(
                           (i == 0) ? "" : collectionName
-                        , (i == 0) ? parent.Name + "Id" : (p.GetTypeOfT().IsSystemType()) ? "Serialized" + p.GetTypeOfT().Name + "Collections" : p.GetTypeOfT().Name + "Id"
+                        , (i == 0) ? parent.Name + "Id"
+                                   : (collection.GetTypeOfT().IsSystemType())
+                                   ? "Serialized" + collection.GetTypeOfT().Name + "Collections"
+                                   : collection.GetTypeOfT().Name + "Id"
                         , (i == 0) ? true : false
                         , (i == 0) ? true : false
-                        , DeterminSQLType((i == 0) ? typeof(int) : (p.GetTypeOfT().IsSystemType()) ? typeof(string) : typeof(int))
+                        , DeterminSQLType((i == 0) ? typeof(int) : (collection.GetTypeOfT().IsSystemType()) ? typeof(string) : typeof(int))
                     ));
                 }
 
@@ -339,14 +335,16 @@ namespace NostreetsORM
             };
 
             entities.Add(new EntityMap(
-                        new EntityTable(parent.Name + "_" + collectionName + "_" + GetTableName(p))
-                        , getColumns(p)
+                        collection
+                        , new EntityTable(parent.Name + "_" + collectionName + "_" + GetTableName(collection))
+                        , getColumns(collection)
                         , new[] { new EntityAssociation(
-                             collectionName
+                             collection
+                           , collectionName
                            , parent.Name + "Id"
                            , parent.Name
                            , GetPKOfTable(parent)) }
-                        , collectionName + p.Name));
+                        , collectionName + collection.Name));
 
         }
 
@@ -357,9 +355,9 @@ namespace NostreetsORM
 
             if (excludedProps != null)
             {
-                if (_ingoredProps == null)
-                    _ingoredProps = new Dictionary<Type, PropertyInfo[]>();
-                _ingoredProps.AddValues(excludedProps);
+                if (_ignoredProps == null)
+                    _ignoredProps = new Dictionary<Type, PropertyInfo[]>();
+                _ignoredProps.AddValues(excludedProps);
             }
 
             foreach (Type r in relations)
@@ -417,22 +415,6 @@ namespace NostreetsORM
             return result;
         }
 
-        private string GetTableName(Type type, string prefix = null)
-        {
-            string result = null;
-            if (!type.IsCollection())
-            {
-                result = (type.Name.IsPlural()) ? type.Name + "es" : type.Name + "s";
-            }
-            else
-            {
-                result = type.GetTypeOfT().Name + "Collections";
-            }
-            result = result.SafeName();
-
-            return (prefix != null) ? prefix + result : result;
-        }
-
         private object GetNormalizedSchema(Type type, string prefix = null)
         {
             List<string> propNames = new List<string>();
@@ -468,6 +450,143 @@ namespace NostreetsORM
             return ClassBuilder.CreateObject(type.Name, propNames.ToArray(), propTypes.ToArray());
 
         }
+
+        private Type[] GetRelationships(Type type)
+        {
+            if (type.IsCollection())
+                return new[] { type.GetTypeOfT() };
+
+            Type[] result = null;
+            List<Type> list = null;
+            List<PropertyInfo> relations = type.GetProperties().Where(a => ShouldNormalize(a.PropertyType) || (a.PropertyType != typeof(string) && a.PropertyType.IsCollection())).ToList();
+
+            if (relations != null && relations.Count > 0)
+            {
+                foreach (PropertyInfo prop in relations)
+                {
+                    Type propType = prop.PropertyType;
+
+                    if (list == null)
+                        list = new List<Type>();
+
+                    list.Add(propType);
+                }
+
+                result = list?.Distinct().ToArray();
+            }
+
+            return result;
+        }
+
+        private Dictionary<Type, Type[]> GetSubTablesAccessed()
+        {
+            List<Type> typesToCheck = GetRelationships(_type).Distinct().ToList();
+            Dictionary<Type, Type[]> result = new Dictionary<Type, Type[]>();
+            Type[] relations = null;
+
+
+            for (int i = 0; i < typesToCheck.Count; i++)
+            {
+                relations = GetRelationships(typesToCheck[i]);
+
+                result.Add(typesToCheck[i], relations);
+
+                if (relations != null)
+                    typesToCheck.AddRange(relations);
+
+            }
+
+            return result;
+        }
+
+        private void BackupAndDropType(EntityMap map)
+        {
+            IEnumerable<EntityMap> tblsThatReferType = TablesAccessed.Where(a => (a.Association.Length > 0 && a.Association.Any(b => b.Type == map.Type)));
+            EntityAssociation[] tblsTypeRefers = (TablesAccessed.Any(a => a == map)) ? TablesAccessed.Single(a => a == map).Association : null;
+
+
+            if (tblsThatReferType != null && tblsThatReferType.Count() > 0)
+                foreach (EntityMap tbl in tblsThatReferType)
+                    if (!CheckIfBackUpExist(tbl.Type))
+                        BackupAndDropType(tbl);
+
+
+
+            if (tblsTypeRefers != null && tblsTypeRefers.Any(a => a.Type.IsCollection()))
+                foreach (EntityAssociation list in tblsTypeRefers.Where(a => a.Type.IsCollection()))
+                {
+                    CreateBackupTable(list.Type, map.Type.Name + "_");
+                    DropTable(list.Type, map.Type.Name + "_");
+                }
+
+
+            if (!map.Type.IsEnum)
+                CreateBackupTable(map.Type);
+
+
+            DropTable(map.Type);
+        }
+
+        private void UpdateTableFromBackup(Type type)
+        {
+            if (type.IsEnum)
+                return;
+
+            EntityMap map = (TablesAccessed.Any(a => a.Type == type)) ? TablesAccessed.Single(a => a.Type == type) : null;
+            IEnumerable<EntityMap> collectionRelations = (TablesAccessed.Any(a => a.Type == type)) ? TablesAccessed.Where(a => a.Type.IsCollection()) : null;
+
+            if (map != null)
+                foreach (EntityAssociation tbl in map.Association)
+                    UpdateTableFromBackup(tbl.Type);
+
+
+            UpdateRows(type);
+
+            if (collectionRelations != null && collectionRelations.Count() > 0)
+            {
+                foreach (EntityMap collection in collectionRelations)
+                {
+                    if (!collection.Type.GetTypeOfT().IsSystemType())
+                        UpdateTableFromBackup(collection.GetTypeOfT());
+                    UpdateRows(collection.Type, type.Name + "_");
+                }
+            }
+
+        }
+
+        private void DeleteCreationScraps()
+        {
+            List<Type> tbls = TablesAccessed.Select(a => a.Type).ToList();
+            for (int i = 0; i < tbls.Count; i++)
+            {
+                if (tbls[i].GetProperties().Length > 0 && tbls[i].GetProperties().Any(a => a.PropertyType.IsCollection()))
+                {
+                    PropertyInfo[] collections = tbls[i].GetProperties().Where(a => a.PropertyType.IsCollection()).ToArray();
+                    foreach (PropertyInfo collection in collections)
+                    {
+                        string tblName = tbls[i].Name.SafeName();
+
+                        DropTable(collection.PropertyType, tblName + '_' + collection.Name + '_');
+                        DropBackupTable(collection.PropertyType, tblName + '_' + collection.Name + '_');
+                        DropProcedures(collection.PropertyType, tblName + '_' + collection.Name + '_');
+
+                        if (tbls.Contains(collection.PropertyType))
+                            tbls.Remove(collection.PropertyType);
+                    }
+                }
+
+                if (!tbls[i].IsEnum)
+                {
+                    DropTable(tbls[i]);
+                    DropBackupTable(tbls[i]);
+                    DropProcedures(tbls[i]);
+                }
+            }
+        }
+
+        #endregion
+
+        #region String Generation
 
         private string DeterminSQLType(Type type, bool needsDefault = false, bool isPK = false)
         {
@@ -534,108 +653,20 @@ namespace NostreetsORM
             return statement;
         }
 
-        private Type[] GetRelationships(Type type)
+        private string GetTableName(Type type, string prefix = null)
         {
-            if (type.IsCollection())
-                return new[] { type.GetTypeOfT() };
-
-            Type[] result = null;
-            List<Type> list = null;
-            List<PropertyInfo> relations = type.GetProperties().Where(a => ShouldNormalize(a.PropertyType) || (a.PropertyType != typeof(string) && a.PropertyType.IsCollection())).ToList();
-
-            if (relations != null && relations.Count > 0)
+            string result = null;
+            if (!type.IsCollection())
             {
-                foreach (PropertyInfo prop in relations)
-                {
-                    Type propType = prop.PropertyType;
-
-                    if (list == null)
-                        list = new List<Type>();
-
-                    list.Add(propType);
-                }
-
-                result = list?.Distinct().ToArray();
+                result = (type.Name.IsPlural()) ? type.Name + "es" : type.Name + "s";
             }
-
-            return result;
-        }
-
-        private Dictionary<Type, Type[]> GetSubTablesAccessed()
-        {
-            List<Type> typesToCheck = GetRelationships(_type).Distinct().ToList();
-            Dictionary<Type, Type[]> result = new Dictionary<Type, Type[]>();
-            Type[] relations = null;
-
-
-            for (int i = 0; i < typesToCheck.Count; i++)
+            else
             {
-                relations = GetRelationships(typesToCheck[i]);
-
-                result.Add(typesToCheck[i], relations);
-
-                if (relations != null)
-                    typesToCheck.AddRange(relations);
-
+                result = type.GetTypeOfT().Name + "Collections";
             }
+            result = result.SafeName();
 
-            return result;
-        }
-
-        private void BackupAndDropType(Type type)
-        {
-            List<KeyValuePair<Type, Type[]>> tblsToBackUp = TablesAccessed.Where(a => (a.Association.Length > 0 && a.Association.Any(b => b == type))).ToList() ?? null;
-            Type[] typeRelations = (TablesAccessed.Contains(type)) ? TablesAccessed[type] : null;
-
-
-
-            if (tblsToBackUp != null && tblsToBackUp.Count > 0)
-                foreach (KeyValuePair<Type, Type[]> tbl in tblsToBackUp)
-                    if (!CheckIfBackUpExist(tbl.Key))
-                        BackupAndDropType(tbl.Key);
-
-
-
-            if (typeRelations != null && typeRelations.Any(a => a.IsCollection()))
-                foreach (Type list in typeRelations.Where(a => a.IsCollection()))
-                {
-                    CreateBackupTable(list, type.Name + "_");
-                    DropTable(list, type.Name + "_");
-                }
-
-
-            if (!type.IsEnum)
-                CreateBackupTable(type);
-
-
-            DropTable(type);
-        }
-
-        private void UpdateTableFromBackup(Type type)
-        {
-            if (type.IsEnum)
-                return;
-
-            Type[] typeRelations = (TablesAccessed[type] == null) ? TablesAccessed[type] : TablesAccessed[type].Where(a => !a.IsCollection()).ToArray(),
-                   collectionRelations = (TablesAccessed[type] == null) ? null : TablesAccessed[type].Where(a => a.IsCollection()).ToArray();
-
-            if (typeRelations != null)
-                foreach (Type tbl in typeRelations)
-                    UpdateTableFromBackup(tbl);
-
-
-            UpdateRows(type);
-
-            if (collectionRelations != null && collectionRelations.Length > 0)
-            {
-                foreach (Type collection in collectionRelations)
-                {
-                    if (!collection.GetTypeOfT().IsSystemType())
-                        UpdateTableFromBackup(collection.GetTypeOfT());
-                    UpdateRows(collection, type.Name + "_");
-                }
-            }
-
+            return (prefix != null) ? prefix + result : result;
         }
 
         private string GetProcsForCollection(Type type, string prefix, KeyValuePair<string, string> template)
@@ -1096,39 +1127,6 @@ namespace NostreetsORM
             return query;
         }
 
-        private void DeleteCreationScraps()
-        {
-            List<Type> tbls = TablesAccessed.Keys.ToList();
-            for (int i = 0; i < tbls.Count; i++)
-            {
-                if (tbls[i].GetProperties().Length > 0 && tbls[i].GetProperties().Any(a => a.PropertyType.IsCollection()))
-                {
-                    PropertyInfo[] collections = tbls[i].GetProperties().Where(a => a.PropertyType.IsCollection()).ToArray();
-                    foreach (PropertyInfo collection in collections)
-                    {
-                        //if (!collection.PropertyType.GetTypeOfT().IsSystemType())
-                        //{
-                        string tblName = tbls[i].Name.SafeName();
-
-                        DropTable(collection.PropertyType, tblName + '_' + collection.Name + '_');
-                        DropBackupTable(collection.PropertyType, tblName + '_' + collection.Name + '_');
-                        DropProcedures(collection.PropertyType, tblName + '_' + collection.Name + '_');
-                        //}
-
-                        if (tbls.Contains(collection.PropertyType))
-                            tbls.Remove(collection.PropertyType);
-                    }
-                }
-
-                if (!tbls[i].IsEnum)
-                {
-                    DropTable(tbls[i]);
-                    DropBackupTable(tbls[i]);
-                    DropProcedures(tbls[i]);
-                }
-            }
-        }
-
         #endregion
 
         #region Internal Writes
@@ -1153,8 +1151,8 @@ namespace NostreetsORM
                 else
                 {
                     List<PropertyInfo> baseProps = type.GetProperties().ToList();
-                    List<PropertyInfo> includedProps = (_ingoredProps != null && _ingoredProps.Count > 0 && _ingoredProps[type] != null && _ingoredProps[type].Length > 0)
-                                                            ? baseProps.Where(a => !_ingoredProps[type].Contains(a)).ToList()
+                    List<PropertyInfo> includedProps = (_ignoredProps != null && _ignoredProps.Count > 0 && _ignoredProps[type] != null && _ignoredProps[type].Length > 0)
+                                                            ? baseProps.Where(a => !_ignoredProps[type].Contains(a)).ToList()
                                                             : baseProps;
 
                     List<string> oldColumns = GetOldColumns(type);
@@ -1581,9 +1579,9 @@ namespace NostreetsORM
 
                 if (excludedProps != null)
                 {
-                    if (_ingoredProps == null)
-                        _ingoredProps = new Dictionary<Type, PropertyInfo[]>();
-                    _ingoredProps.AddValues(excludedProps);
+                    if (_ignoredProps == null)
+                        _ignoredProps = new Dictionary<Type, PropertyInfo[]>();
+                    _ignoredProps.AddValues(excludedProps);
                 }
 
                 if (NeedsIdProp(type))
