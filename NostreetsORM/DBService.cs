@@ -270,15 +270,13 @@ namespace NostreetsORM
             {
                 List<EntityAssociation> list = new List<EntityAssociation>();
                 PropertyInfo[] props = type.GetProperties().Where(
-                                               b => ShouldNormalize(b.PropertyType) && (!_ignoredProps.ContainsKey(type) || _ignoredProps[type].Any(c => c != b))
+                                               b => ShouldNormalize(b.PropertyType) && (_ignoredProps.All(a => a.Value.All(c => c != b)))
                                             ).ToArray();
-                PropertyInfo pk = props[GetPKOrdinalOfType(type)];
 
 
 
                 foreach (PropertyInfo prop in props)
                 {
-                    bool isPk = (pk == prop) ? true : false;
                     list.Add(new EntityAssociation(
                           prop.PropertyType
                         , prop.Name
@@ -358,8 +356,9 @@ namespace NostreetsORM
             if (excludedProps != null)
                 result.Add(type, excludedProps.ToArray());
 
-            foreach (Type r in relations)
-                result.Concat(GetIngoredProperties(r));
+            if (relations != null)
+                foreach (Type r in relations)
+                    result.Concat(GetIngoredProperties(r));
 
             return result;
         }
@@ -1572,25 +1571,25 @@ namespace NostreetsORM
 
                 #region Declaration
                 KeyValuePair<string, Type>[] columnsInTable = Instance.GetSchema(() => Connection, GetTableName(type));
-                List<PropertyInfo> baseProps = type.GetProperties().ToList(),
-                                   excludedProps = type.GetPropertiesByAttribute<NotMappedAttribute>(),
-                                   includedProps = baseProps.Where(a => (excludedProps != null && !excludedProps.Contains(a) && !a.PropertyType.IsCollection()) || !a.PropertyType.IsCollection()).ToList();
+                PropertyInfo[] baseProps = type.GetProperties(),
+                               excludedProps = _ignoredProps.ContainsKey(type) ? _ignoredProps[type] : null, //type.GetPropertiesByAttribute<NotMappedAttribute>(),
+                               includedProps = baseProps.Where(a => (excludedProps != null && !excludedProps.Contains(a)) || !a.PropertyType.IsCollection()).ToArray();
 
 
-                if (excludedProps != null)
-                {
-                    if (_ignoredProps == null)
-                        _ignoredProps = new Dictionary<Type, PropertyInfo[]>();
-                    _ignoredProps.AddValues(excludedProps);
-                }
+                //if (excludedProps != null)
+                //{
+                //    if (_ignoredProps == null)
+                //        _ignoredProps = new Dictionary<Type, PropertyInfo[]>();
+                //    _ignoredProps.AddValues(excludedProps);
+                //}
 
                 if (NeedsIdProp(type))
                 {
-                    for (int i = 0; i < includedProps.Count; i++)
-                        if (includedProps[i].Name == "Id")
-                            includedProps.Remove(includedProps[i]);
+                    for (int i = 0; i < includedProps.Length; i++)
+                        if (includedProps[i].Name == "Id") { includedProps[i] = type.AddProperty(typeof(int), "Id").GetProperty("Id"); break; }
+                    //includedProps.Remove(includedProps[i]);
 
-                    includedProps.Prepend(type.AddProperty(typeof(int), "Id").GetProperty("Id"));
+                    //includedProps.Prepend(type.AddProperty(typeof(int), "Id").GetProperty("Id"));
                 }
                 #endregion
 
