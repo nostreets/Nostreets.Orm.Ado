@@ -337,7 +337,7 @@ namespace NostreetsORM
                         , new EntityTable(parent.Name + "_" + collectionName + "_" + GetTableName(collection))
                         , getColumns(collection)
                         , new[] { new EntityAssociation(
-                             collection
+                             parent
                            , collectionName
                            , parent.Name + "Id"
                            , parent.Name
@@ -457,7 +457,9 @@ namespace NostreetsORM
 
             Type[] result = null;
             List<Type> list = null;
-            List<PropertyInfo> relations = type.GetProperties().Where(a => ShouldNormalize(a.PropertyType) || (a.PropertyType != typeof(string) && a.PropertyType.IsCollection())).ToList();
+            List<PropertyInfo> relations = type.GetProperties().Where(
+                                                a =>  (ShouldNormalize(a.PropertyType) && !a.PropertyType.IsEnum)  || (a.PropertyType != typeof(string) && a.PropertyType.IsCollection())
+                                           ).ToList();
 
             if (relations != null && relations.Count > 0)
             {
@@ -500,8 +502,9 @@ namespace NostreetsORM
 
         private void BackupAndDropType(EntityMap map)
         {
-            IEnumerable<EntityMap> tblsThatReferType = TablesAccessed.Where(a => (a.Association.Length > 0 && a.Association.Any(b => b.Type == map.Type)));
-            EntityAssociation[] tblsTypeRefers = (TablesAccessed.Any(a => a == map)) ? TablesAccessed.Single(a => a == map).Association : null;
+            IEnumerable<EntityMap> tblsThatReferType = TablesAccessed.Where(a => (a.Association.Length > 0 && a.Association.Any(b => b.Type == map.Type)) && a != map);
+            EntityAssociation[] tblsTypeRefers = map.Association; //(TablesAccessed.Any(a => a == map)) ? TablesAccessed.Single(a => a == map).Association : null;
+
 
 
             if (tblsThatReferType != null && tblsThatReferType.Count() > 0)
@@ -532,7 +535,9 @@ namespace NostreetsORM
                 return;
 
             EntityMap map = (TablesAccessed.Any(a => a.Type == type)) ? TablesAccessed.Single(a => a.Type == type) : null;
-            IEnumerable<EntityMap> collectionRelations = (TablesAccessed.Any(a => a.Type == type)) ? TablesAccessed.Where(a => a.Type.IsCollection()) : null;
+            IEnumerable<EntityMap> collectionRelations = TablesAccessed.Any(a => a.Type.IsCollection() && a.Association.Any(b => b.Type == type))
+                                                       ? TablesAccessed.Where(a => a.Type.IsCollection() && a.Association.Any(b => b.Type == type))
+                                                       : null;
 
             if (map != null)
                 foreach (EntityAssociation tbl in map.Association)
@@ -1149,15 +1154,16 @@ namespace NostreetsORM
                 }
                 else
                 {
+                    int pkOrdinal = GetPKOrdinalOfType(type);
                     List<PropertyInfo> baseProps = type.GetProperties().ToList();
                     List<PropertyInfo> includedProps = (_ignoredProps != null && _ignoredProps.Count > 0 && _ignoredProps[type] != null && _ignoredProps[type].Length > 0)
-                                                            ? baseProps.Where(a => !_ignoredProps[type].Contains(a)).ToList()
+                                                            ? baseProps.Where(a => !_ignoredProps[type].Contains(a) || a.PropertyType.IsCollection()).ToList()
                                                             : baseProps;
 
                     List<string> oldColumns = GetOldColumns(type);
                     List<string> matchingColumns = oldColumns.Where(a => includedProps.Any(b => a == ((ShouldNormalize(b.PropertyType)) ? b.Name + "Id" : b.Name))).ToList();
 
-                    Type pkOrdinalType = baseProps.GetPropertyValue(GetPKOrdinalOfType(type)).GetType();
+                    Type pkOrdinalType = baseProps.Where((a, b) => b == pkOrdinal).Single().PropertyType;
 
                     string columns = String.Join(", ", matchingColumns);
 
