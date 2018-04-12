@@ -240,7 +240,7 @@ namespace NostreetsORM
 
         private void MapType(Type type, ref List<EntityMap> entities)
         {
-            PropertyInfo[] relations = type.GetProperties().Where(a => GetRelationships(type) != null && GetRelationships(type).Any(b => b == a.PropertyType)).ToArray();
+            PropertyInfo[] relations = type.GetProperties().Where(a => !a.PropertyType.IsEnum && ShouldNormalize(a.PropertyType)).ToArray();
 
             Func<EntityColumn[]> getColumns = () =>
             {
@@ -1228,7 +1228,7 @@ namespace NostreetsORM
             foreach (KeyValuePair<string, string> template in _procTemplates)
             {
                 string nameToCheck = (template.Key.Contains("Insert")) ? "Insert" : template.Key;
-                if (procs.Any(a => a.Contains(nameToCheck)))
+                if (procs != null && procs.Any(a => a.Contains(nameToCheck)))
                     continue;
 
                 string query = null;
