@@ -1,11 +1,11 @@
 ﻿using System;
+using System.IO;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.SqlClient;
 using System.Linq;
 using System.Reflection;
 using System.ComponentModel.DataAnnotations.Schema;
-using Provider = NostreetsExtensions.Helpers.QueryProvider;
 using NostreetsExtensions.Helpers;
 using NostreetsExtensions.Interfaces;
 using NostreetsExtensions;
@@ -13,10 +13,7 @@ using System.Collections;
 using NostreetsExtensions.Utilities;
 using Newtonsoft.Json;
 using System.ComponentModel.DataAnnotations;
-using Remotion.Linq;
-using Remotion.Linq.Parsing.Structure;
 using NostreetsExtensions.Helpers.QueryProvider;
-using System.Linq.Expressions;
 
 namespace NostreetsORM
 {
@@ -77,6 +74,7 @@ namespace NostreetsORM
 
         public string LastQueryExcuted => _lastQueryExcuted;
         public Type IdType => _idType;
+
 
         private bool _tableCreation = false,
                      _nullLock = false;
@@ -178,6 +176,8 @@ namespace NostreetsORM
 
             _partialProcs.Add("CreateTable",
                 "Declare @isTrue int = 0 Begin CREATE TABLE [dbo].[{0}] ( {1} ); IF EXISTS(SELECT* FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = N'{0}') Begin Set @IsTrue = 1 End End Select @IsTrue");
+
+            _partialProcs.Add("BackupDB", "BACKUP DATABASE {0} TO DISK = '{1}'");
 
             _partialProcs.Add("CreateColumn", "[{0}] {1} {2}");
 
@@ -587,6 +587,7 @@ namespace NostreetsORM
                 }
             }
         }
+
 
         #endregion
 
@@ -1131,6 +1132,7 @@ namespace NostreetsORM
             return query;
         }
 
+
         #endregion
 
         #region Internal Writes
@@ -1473,6 +1475,13 @@ namespace NostreetsORM
             }
 
             --_tableLayer;
+        }
+
+        private void BackupDB(string path)
+        {
+            string query = _partialProcs["BackupDB"].FormatString(Builder.InitialCatalog, path);
+            Instance.ExecuteNonQuery(() => Connection, query, null, null, (mod) => mod.CommandType = CommandType.Text);
+
         }
 
         #endregion
@@ -2705,6 +2714,16 @@ namespace NostreetsORM
                 Delete(id);
         }
 
+        public void Backup(string path = null)
+        {
+            if (path == null)
+                path = Static.GetOSDrive() + "/ORMBackups";
+
+            path.CreateFolder();
+
+            BackupDB(path);
+        }
+
         #endregion
     }
 
@@ -2888,6 +2907,11 @@ namespace NostreetsORM
 
             foreach (object id in ids)
                 Delete(id);
+        }
+
+        public void Backup(string path = null)
+        {
+            _baseSrv.Backup(path);
         }
     }
 
@@ -3086,6 +3110,12 @@ namespace NostreetsORM
             foreach (IdType id in ids)
                 Delete(id);
         }
+
+        public void Backup(string path = null)
+        {
+            _baseSrv.Backup(path);
+        }
+
     }
 
     public class DBService<T, IdType, AddType, UpdateType> : IDBService<T, IdType, AddType, UpdateType> where T : class
@@ -3237,6 +3267,12 @@ namespace NostreetsORM
             foreach (IdType id in ids)
                 Delete(id);
         }
+
+        public void Backup(string path = null)
+        {
+            _baseSrv.Backup(path);
+        }
+
     }
 
 }
