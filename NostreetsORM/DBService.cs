@@ -2717,7 +2717,7 @@ namespace NostreetsORM
         public void Backup(string path = null)
         {
             if (path == null)
-                path = Static.GetOSDrive() + "/ORMBackups";
+                path = Static.GetOSDrive() + "ORMBackups";
 
             path.CreateFolder();
 
