@@ -14,6 +14,7 @@ using NostreetsExtensions.Utilities;
 using Newtonsoft.Json;
 using System.ComponentModel.DataAnnotations;
 using NostreetsExtensions.Helpers.QueryProvider;
+using NostreetsExtensions.DataControl.Classes;
 
 namespace NostreetsORM
 {
@@ -27,6 +28,20 @@ namespace NostreetsORM
             }
             catch (Exception ex)
             {
+                throw ex;
+            }
+        }
+
+        public DBService(Type type, IDBService<Error> errorLog) : base()
+        {
+            try
+            {
+                _errorLog = errorLog ?? throw new NullReferenceException("errorLog");
+                SetUp(type, false);
+            }
+            catch (Exception ex)
+            {
+                _errorLog.Insert(new Error(ex));
 
                 throw ex;
             }
@@ -57,6 +72,34 @@ namespace NostreetsORM
             }
         }
 
+        public DBService(Type type, string connectionKey, IDBService<Error> errorLog) : base(connectionKey)
+        {
+            try
+            {
+                _errorLog = errorLog ?? throw new NullReferenceException("errorLog");
+                SetUp(type, false);
+            }
+            catch (Exception ex)
+            {
+                throw ex;
+            }
+        }
+
+        public DBService(Type type, bool nullLock, IDBService<Error> errorLog) : base()
+        {
+            try
+            {
+                _errorLog = errorLog ?? throw new NullReferenceException("errorLog");
+                SetUp(type, nullLock);
+            }
+            catch (Exception ex)
+            {
+                _errorLog.Insert(new Error(ex));
+
+                throw ex;
+            }
+        }
+
         public DBService(Type type, string connectionKey, bool nullLock) : base(connectionKey)
         {
             try
@@ -69,11 +112,26 @@ namespace NostreetsORM
             }
         }
 
+        public DBService(Type type, string connectionKey, bool nullLock, IDBService<Error> errorLog) : base(connectionKey)
+        {
+            try
+            {
+                _errorLog = errorLog ?? throw new NullReferenceException("errorLog");
+                SetUp(type, nullLock);
+            }
+            catch (Exception ex)
+            {
+                _errorLog.Insert(new Error(ex));
+
+                throw ex;
+            }
+        }
+
+        public Type IdType => _idType;
 
         public List<EntityMap> TablesAccessed => _mappedEntities;
 
         public string LastQueryExcuted => _lastQueryExcuted;
-        public Type IdType => _idType;
 
 
         private bool _tableCreation = false,
@@ -86,6 +144,7 @@ namespace NostreetsORM
         private string _lastQueryExcuted = null;
         private Type _idType = null;
         private List<EntityMap> _mappedEntities = null;
+        private IDBService<Error> _errorLog = null;
 
 
         #region Internal Logic
@@ -385,11 +444,11 @@ namespace NostreetsORM
             else if (pk != null && (pk.PropertyType == typeof(int) || pk.PropertyType == typeof(Guid) || pk.PropertyType == typeof(string)) && pk.Name.ToLower().Contains("id"))
                 result = false;
 
-            else if (pk != null)
-                throw new Exception("Primary Key must be the data type of Int32, Guid, or string...");
-
             else if (type.GetProperties()[0].Name.ToLower().Contains("id") && (type.GetProperties()[0].PropertyType == typeof(int) || type.GetProperties()[0].PropertyType == typeof(Guid) || type.GetProperties()[0].PropertyType == typeof(string)))
                 result = false;
+
+            else if (pk != null)
+                throw new Exception("Primary Key must be the data type of Int32, Guid, or string...");
 
             return result;
 
@@ -458,7 +517,7 @@ namespace NostreetsORM
             Type[] result = null;
             List<Type> list = null;
             List<PropertyInfo> relations = type.GetProperties().Where(
-                                                a =>  (ShouldNormalize(a.PropertyType) && !a.PropertyType.IsEnum)  || (a.PropertyType != typeof(string) && a.PropertyType.IsCollection())
+                                                a => (ShouldNormalize(a.PropertyType) && !a.PropertyType.IsEnum) || (a.PropertyType != typeof(string) && a.PropertyType.IsCollection())
                                            ).ToList();
 
             if (relations != null && relations.Count > 0)
@@ -1591,20 +1650,11 @@ namespace NostreetsORM
                                includedProps = baseProps.Where(a => (excludedProps != null && !excludedProps.Contains(a)) || !a.PropertyType.IsCollection()).ToArray();
 
 
-                //if (excludedProps != null)
-                //{
-                //    if (_ignoredProps == null)
-                //        _ignoredProps = new Dictionary<Type, PropertyInfo[]>();
-                //    _ignoredProps.AddValues(excludedProps);
-                //}
 
                 if (NeedsIdProp(type))
                 {
                     for (int i = 0; i < includedProps.Length; i++)
                         if (includedProps[i].Name == "Id") { includedProps[i] = type.AddProperty(typeof(int), "Id").GetProperty("Id"); break; }
-                    //includedProps.Remove(includedProps[i]);
-
-                    //includedProps.Prepend(type.AddProperty(typeof(int), "Id").GetProperty("Id"));
                 }
                 #endregion
 
@@ -2531,197 +2581,356 @@ namespace NostreetsORM
 
         public List<object> GetAll()
         {
-            Dictionary<KeyValuePair<string, Type>, List<object>> container = new Dictionary<KeyValuePair<string, Type>, List<object>>();
-            return GetAll(_type, ref container);
+            try
+            {
+                Dictionary<KeyValuePair<string, Type>, List<object>> container = new Dictionary<KeyValuePair<string, Type>, List<object>>();
+                return GetAll(_type, ref container);
+            }
+            catch (Exception ex)
+            {
+                if (_errorLog != null)
+                    _errorLog.Insert(new Error(ex));
+
+                throw ex;
+            }
         }
 
         public void Delete(object id)
         {
-            if (id.GetType() != _idType)
-                throw new Exception("id is not the right Type and cannot Delete...");
+            try
+            {
+                if (id.GetType() != _idType)
+                    throw new Exception("id is not the right Type and cannot Delete...");
 
-            Delete(_type, id);
+                Delete(_type, id);
+            }
+            catch (Exception ex)
+            {
+                if (_errorLog != null)
+                    _errorLog.Insert(new Error(ex));
+
+                throw ex;
+            }
         }
 
         public object Get(object id, Converter<object, object> converter)
         {
-            if (id.GetType() != _idType)
-                throw new Exception("id is not the right Type and cannot Get...");
+            try
+            {
+                if (id.GetType() != _idType)
+                    throw new Exception("id is not the right Type and cannot Get...");
 
-            return (converter == null)
-                    ? Get(_type, id)
-                    : converter(Get(_type, id));
+                return (converter == null)
+                        ? Get(_type, id)
+                        : converter(Get(_type, id));
+            }
+            catch (Exception ex)
+            {
+                if (_errorLog != null)
+                    _errorLog.Insert(new Error(ex));
 
+                throw ex;
+            }
         }
 
         public object Get(object id)
         {
-            return Get(id, null);
+            try
+            {
+                return Get(id, null);
+            }
+            catch (Exception ex)
+            {
+                if (_errorLog != null)
+                    _errorLog.Insert(new Error(ex));
+
+                throw ex;
+            }
         }
 
         public object Insert(object model)
         {
-            if (model.GetType() != _type)
-                throw new Exception("model's Type has to be the type of T in DBService<T> to be able to Insert...");
+            try
+            {
+                if (model.GetType() != _type)
+                    throw new Exception("model's Type has to be the type of T in DBService<T> to be able to Insert...");
 
-            object id = null;
-            Dictionary<KeyValuePair<Type, PropertyInfo>, KeyValuePair<object, object[]>> relations = new Dictionary<KeyValuePair<Type, PropertyInfo>, KeyValuePair<object, object[]>>();
-            id = Insert(model, _type, ref relations);
+                object id = null;
+                Dictionary<KeyValuePair<Type, PropertyInfo>, KeyValuePair<object, object[]>> relations = new Dictionary<KeyValuePair<Type, PropertyInfo>, KeyValuePair<object, object[]>>();
 
-            return id;
+
+                id = Insert(model, _type, ref relations);
+
+                return id;
+            }
+            catch (Exception ex)
+            {
+                if (_errorLog != null)
+                    _errorLog.Insert(new Error(ex));
+
+                throw ex;
+            }
         }
 
         public object Insert(object model, Converter<object, object> converter)
         {
-            if (model.GetType() != _type)
-                throw new Exception("model's Type has to be the type of T in DBService<T> to be able to Insert...");
+            try
+            {
+                if (model.GetType() != _type)
+                    throw new Exception("model's Type has to be the type of T in DBService<T> to be able to Insert...");
 
-            object id = null;
-            Dictionary<KeyValuePair<Type, PropertyInfo>, KeyValuePair<object, object[]>> relations = new Dictionary<KeyValuePair<Type, PropertyInfo>, KeyValuePair<object, object[]>>();
-            id = Insert(converter(model), _type, ref relations);
+                object id = null;
+                Dictionary<KeyValuePair<Type, PropertyInfo>, KeyValuePair<object, object[]>> relations = new Dictionary<KeyValuePair<Type, PropertyInfo>, KeyValuePair<object, object[]>>();
+                id = Insert(converter(model), _type, ref relations);
 
-            return id;
+                return id;
+            }
+            catch (Exception ex)
+            {
+                if (_errorLog != null)
+                    _errorLog.Insert(new Error(ex));
+
+                throw ex;
+            }
         }
 
         public object[] Insert(IEnumerable<object> collection)
         {
-            if (collection.GetTypeOfT() != _type)
-                throw new Exception("model's Type has to be the type of T in DBService<T> to be able to Insert...");
+            try
+            {
+                if (collection.GetTypeOfT() != _type)
+                    throw new Exception("model's Type has to be the type of T in DBService<T> to be able to Insert...");
 
-            if (collection.Count() == 0)
-                throw new Exception("collection cannot be empty to be able to Insert...");
+                if (collection.Count() == 0)
+                    throw new Exception("collection cannot be empty to be able to Insert...");
 
 
-            List<object> ids = new List<object>();
-            Dictionary<KeyValuePair<Type, PropertyInfo>, KeyValuePair<object, object[]>> relations = new Dictionary<KeyValuePair<Type, PropertyInfo>, KeyValuePair<object, object[]>>();
+                List<object> ids = new List<object>();
+                Dictionary<KeyValuePair<Type, PropertyInfo>, KeyValuePair<object, object[]>> relations = new Dictionary<KeyValuePair<Type, PropertyInfo>, KeyValuePair<object, object[]>>();
 
-            foreach (object model in collection)
-                ids.Add(Insert(model, _type, ref relations));
+                foreach (object model in collection)
+                    ids.Add(Insert(model, _type, ref relations));
 
-            return ids.ToArray();
+                return ids.ToArray();
+            }
+            catch (Exception ex)
+            {
+                if (_errorLog != null)
+                    _errorLog.Insert(new Error(ex));
+
+                throw ex;
+            }
         }
 
         public object[] Insert(IEnumerable<object> collection, Converter<object, object> converter)
         {
-            if (collection.GetTypeOfT() != _type)
-                throw new Exception("model's Type has to be the type of T in DBService<T> to be able to Insert...");
+            try
+            {
+                if (collection.GetTypeOfT() != _type)
+                    throw new Exception("model's Type has to be the type of T in DBService<T> to be able to Insert...");
 
-            if (collection.Count() == 0)
-                throw new Exception("collection cannot be empty to be able to Insert...");
+                if (collection.Count() == 0)
+                    throw new Exception("collection cannot be empty to be able to Insert...");
 
 
-            List<object> ids = new List<object>();
-            Dictionary<KeyValuePair<Type, PropertyInfo>, KeyValuePair<object, object[]>> relations = new Dictionary<KeyValuePair<Type, PropertyInfo>, KeyValuePair<object, object[]>>();
+                List<object> ids = new List<object>();
+                Dictionary<KeyValuePair<Type, PropertyInfo>, KeyValuePair<object, object[]>> relations = new Dictionary<KeyValuePair<Type, PropertyInfo>, KeyValuePair<object, object[]>>();
 
-            foreach (object model in collection)
-                ids.Add(Insert(converter(model), _type, ref relations));
+                foreach (object model in collection)
+                    ids.Add(Insert(converter(model), _type, ref relations));
 
-            return ids.ToArray();
+                return ids.ToArray();
+            }
+            catch (Exception ex)
+            {
+                if (_errorLog != null)
+                    _errorLog.Insert(new Error(ex));
+
+                throw ex;
+            }
         }
 
         public void Update(object model)
         {
-            if (model.GetType() != _type)
-                throw new Exception("model's Type has to be the type of T in DBService<T> to be able to Update...");
+            try
+            {
+                if (model.GetType() != _type)
+                    throw new Exception("model's Type has to be the type of T in DBService<T> to be able to Update...");
 
-            if (model.GetPropertyValue("Id") == null)
-                throw new Exception("model's Id propery has to equal an PK in the Database to be able to Update...");
+                if (model.GetPropertyValue("Id") == null)
+                    throw new Exception("model's Id propery has to equal an PK in the Database to be able to Update...");
 
-            if (model.GetPropertyValue("Id").GetType() != _idType)
-                throw new Exception("model's Id propery has to equal the same Type as the Id column in the Database to be able to Update...");
+                if (model.GetPropertyValue("Id").GetType() != _idType)
+                    throw new Exception("model's Id propery has to equal the same Type as the Id column in the Database to be able to Update...");
 
-            Update(model, model.GetPropertyValue("Id"), _type);
+                Update(model, model.GetPropertyValue("Id"), _type);
+            }
+            catch (Exception ex)
+            {
+                if (_errorLog != null)
+                    _errorLog.Insert(new Error(ex));
+
+                throw ex;
+            }
         }
 
         public void Update(object model, Converter<object, object> converter)
         {
-            if (model.GetType() != _type)
-                throw new Exception("model's Type has to be the type of T in DBService<T> to be able to Update...");
+            try
+            {
+                if (model.GetType() != _type)
+                    throw new Exception("model's Type has to be the type of T in DBService<T> to be able to Update...");
 
-            if (model.GetPropertyValue("Id") == null)
-                throw new Exception("model's Id propery has to equal an PK in the Database to be able to Update...");
+                if (model.GetPropertyValue("Id") == null)
+                    throw new Exception("model's Id propery has to equal an PK in the Database to be able to Update...");
 
-            if (model.GetPropertyValue("Id").GetType() != _idType)
-                throw new Exception("model's Id propery has to equal the same Type as the Id column in the Database to be able to Update...");
+                if (model.GetPropertyValue("Id").GetType() != _idType)
+                    throw new Exception("model's Id propery has to equal the same Type as the Id column in the Database to be able to Update...");
 
-            Update(converter(model), model.GetPropertyValue("Id"), _type);
+                Update(converter(model), model.GetPropertyValue("Id"), _type);
+            }
+            catch (Exception ex)
+            {
+                if (_errorLog != null)
+                    _errorLog.Insert(new Error(ex));
+
+                throw ex;
+            }
         }
 
         public void Update(IEnumerable<object> collection)
         {
-            if (collection.GetTypeOfT() != _type)
-                throw new Exception("model's Type has to be the type of T in DBService<T> to be able to Update...");
+            try
+            {
+                if (collection.GetTypeOfT() != _type)
+                    throw new Exception("model's Type has to be the type of T in DBService<T> to be able to Update...");
 
-            if (collection.Count() == 0)
-                throw new Exception("collection cannot be empty to be able to Update...");
+                if (collection.Count() == 0)
+                    throw new Exception("collection cannot be empty to be able to Update...");
 
-            if (collection.ElementAt(0).GetPropertyValue("Id") == null)
-                throw new Exception("model's Id propery has to equal an PK in the Database to be able to Update...");
+                if (collection.ElementAt(0).GetPropertyValue("Id") == null)
+                    throw new Exception("model's Id propery has to equal an PK in the Database to be able to Update...");
 
-            if (collection.ElementAt(0).GetPropertyValue("Id").GetType() != _idType)
-                throw new Exception("model's Id propery has to equal the same Type as the Id column in the Database to be able to Update...");
+                if (collection.ElementAt(0).GetPropertyValue("Id").GetType() != _idType)
+                    throw new Exception("model's Id propery has to equal the same Type as the Id column in the Database to be able to Update...");
 
-            foreach (object model in collection)
-                Update(model, model.GetPropertyValue("Id"), _type);
+                foreach (object model in collection)
+                    Update(model, model.GetPropertyValue("Id"), _type);
+            }
+            catch (Exception ex)
+            {
+                if (_errorLog != null)
+                    _errorLog.Insert(new Error(ex));
+
+                throw ex;
+            }
         }
 
         public void Update(IEnumerable<object> collection, Converter<object, object> converter)
         {
-            if (collection.GetTypeOfT() != _type)
-                throw new Exception("model's Type has to be the type of T in DBService<T> to be able to Update...");
+            try
+            {
+                if (collection.GetTypeOfT() != _type)
+                    throw new Exception("model's Type has to be the type of T in DBService<T> to be able to Update...");
 
-            if (collection.Count() == 0)
-                throw new Exception("collection cannot be empty to be able to Update...");
+                if (collection.Count() == 0)
+                    throw new Exception("collection cannot be empty to be able to Update...");
 
-            if (collection.ElementAt(0).GetPropertyValue("Id") == null)
-                throw new Exception("model's Id propery has to equal an PK in the Database to be able to Update...");
+                if (collection.ElementAt(0).GetPropertyValue("Id") == null)
+                    throw new Exception("model's Id propery has to equal an PK in the Database to be able to Update...");
 
-            if (collection.ElementAt(0).GetPropertyValue("Id").GetType() != _idType)
-                throw new Exception("model's Id propery has to equal the same Type as the Id column in the Database to be able to Update...");
+                if (collection.ElementAt(0).GetPropertyValue("Id").GetType() != _idType)
+                    throw new Exception("model's Id propery has to equal the same Type as the Id column in the Database to be able to Update...");
 
-            foreach (object model in collection)
-                Update(converter(model), model.GetPropertyValue("Id"), _type);
+                foreach (object model in collection)
+                    Update(converter(model), model.GetPropertyValue("Id"), _type);
+            }
+            catch (Exception ex)
+            {
+                if (_errorLog != null)
+                    _errorLog.Insert(new Error(ex));
+
+                throw ex;
+            }
         }
 
         public IEnumerable<object> Where(Func<object, bool> predicate)
         {
 
-            //TSqlFormatter.Format(predicate.ToExpression()).Log();
+            try
+            {
+                //TSqlFormatter.Format(predicate.ToExpression()).Log();
 
-            IEnumerable<object> result = GetAll();
-            if (result != null)
-                result = result.Where(predicate);
-            else
-                result = new List<object>();
+                IEnumerable<object> result = GetAll();
+                if (result != null)
+                    result = result.Where(predicate);
+                else
+                    result = new List<object>();
 
-            return result;
+                return result;
+            }
+            catch (Exception ex)
+            {
+                if (_errorLog != null)
+                    _errorLog.Insert(new Error(ex));
+
+                throw ex;
+            }
         }
 
         public object FirstOrDefault(Func<object, bool> predicate)
         {
-            return Where(predicate).FirstOrDefault();
+            try
+            {
+                return Where(predicate).FirstOrDefault();
+            }
+            catch (Exception)
+            {
+
+                throw;
+            }
         }
 
         public void Delete(IEnumerable<object> ids)
         {
-            if (ids == null)
-                throw new Exception("collection cannot be null to be able to Insert...");
+            try
+            {
+                if (ids == null)
+                    throw new Exception("collection cannot be null to be able to Insert...");
 
-            if (ids.Count() == 0)
-                throw new Exception("collection cannot be empty to be able to Insert...");
+                if (ids.Count() == 0)
+                    throw new Exception("collection cannot be empty to be able to Insert...");
 
-            foreach (object id in ids)
-                Delete(id);
+                foreach (object id in ids)
+                    Delete(id);
+            }
+            catch (Exception ex)
+            {
+                if (_errorLog != null)
+                    _errorLog.Insert(new Error(ex));
+
+                throw ex;
+            }
         }
 
         public void Backup(string path = null)
         {
-            if (path == null)
-                path = Static.GetOSDrive() + "ORMBackups";
+            try
+            {
+                if (path == null)
+                    path = Static.GetOSDrive() + "ORMBackups";
 
-            path.CreateFolder();
+                path.CreateFolder();
 
-            BackupDB(path);
+                BackupDB(path);
+            }
+            catch (Exception ex)
+            {
+                if (_errorLog != null)
+                    _errorLog.Insert(new Error(ex));
+
+                throw ex;
+            }
         }
 
         #endregion
@@ -2734,6 +2943,11 @@ namespace NostreetsORM
             _baseSrv = new DBService(typeof(T));
         }
 
+        public DBService(IDBService<Error> errorLog)
+        {
+            _baseSrv = new DBService(typeof(T), errorLog);
+        }
+
         public DBService(string connectionKey)
         {
             _baseSrv = new DBService(typeof(T), connectionKey);
@@ -2744,10 +2958,26 @@ namespace NostreetsORM
             _baseSrv = new DBService(typeof(T), nullLock);
         }
 
+        public DBService(string connectionKey, IDBService<Error> errorLog)
+        {
+            _baseSrv = new DBService(typeof(T), connectionKey, errorLog);
+        }
+
+        public DBService(bool nullLock, IDBService<Error> errorLog)
+        {
+            _baseSrv = new DBService(typeof(T), nullLock, errorLog);
+        }
+
         public DBService(string connectionKey, bool nullLock)
         {
             _baseSrv = new DBService(typeof(T), connectionKey, nullLock);
         }
+
+        public DBService(string connectionKey, bool nullLock, IDBService<Error> errorLog)
+        {
+            _baseSrv = new DBService(typeof(T), connectionKey, nullLock, errorLog);
+        }
+
 
         private DBService _baseSrv = null;
 
@@ -2925,6 +3155,14 @@ namespace NostreetsORM
                 throw new Exception("Specified IdType for model is not the right type... Expecting type of " + nameof(_baseSrv.IdType));
         }
 
+        public DBService(IDBService<Error> errorLog)
+        {
+            _baseSrv = new DBService<T>(errorLog);
+
+            if (typeof(IdType) != _baseSrv.IdType)
+                throw new Exception("Specified IdType for model is not the right type... Expecting type of " + nameof(_baseSrv.IdType));
+        }
+
         public DBService(string connectionKey)
         {
             _baseSrv = new DBService<T>(connectionKey);
@@ -2941,9 +3179,33 @@ namespace NostreetsORM
                 throw new Exception("Specified IdType for model is not the right type... Expecting type of " + nameof(_baseSrv.IdType));
         }
 
+        public DBService(string connectionKey, IDBService<Error> errorLog)
+        {
+            _baseSrv = new DBService<T>(connectionKey, errorLog);
+
+            if (typeof(IdType) != _baseSrv.IdType)
+                throw new Exception("Specified IdType for model is not the right type... Expecting type of " + nameof(_baseSrv.IdType));
+        }
+
+        public DBService(bool nullLock, IDBService<Error> errorLog)
+        {
+            _baseSrv = new DBService<T>(nullLock, errorLog);
+
+            if (typeof(IdType) != _baseSrv.IdType)
+                throw new Exception("Specified IdType for model is not the right type... Expecting type of " + nameof(_baseSrv.IdType));
+        }
+
         public DBService(string connectionKey, bool nullLock)
         {
             _baseSrv = new DBService<T>(connectionKey, nullLock);
+
+            if (typeof(IdType) != _baseSrv.IdType)
+                throw new Exception("Specified IdType for model is not the right type... Expecting type of " + nameof(_baseSrv.IdType));
+        }
+
+        public DBService(string connectionKey, bool nullLock, IDBService<Error> errorLog)
+        {
+            _baseSrv = new DBService<T>(connectionKey, nullLock, errorLog);
 
             if (typeof(IdType) != _baseSrv.IdType)
                 throw new Exception("Specified IdType for model is not the right type... Expecting type of " + nameof(_baseSrv.IdType));
@@ -3125,6 +3387,11 @@ namespace NostreetsORM
             _baseSrv = new DBService<T, IdType>();
         }
 
+        public DBService(IDBService<Error> errorLog)
+        {
+            _baseSrv = new DBService<T, IdType>(errorLog);
+        }
+
         public DBService(string connectionKey)
         {
             _baseSrv = new DBService<T, IdType>(connectionKey);
@@ -3135,10 +3402,26 @@ namespace NostreetsORM
             _baseSrv = new DBService<T, IdType>(nullLock);
         }
 
+        public DBService(string connectionKey, IDBService<Error> errorLog)
+        {
+            _baseSrv = new DBService<T, IdType>(connectionKey, errorLog);
+        }
+
+        public DBService(bool nullLock, IDBService<Error> errorLog)
+        {
+            _baseSrv = new DBService<T, IdType>(nullLock, errorLog);
+        }
+
         public DBService(string connectionKey, bool nullLock)
         {
             _baseSrv = new DBService<T, IdType>(connectionKey, nullLock);
         }
+
+        public DBService(string connectionKey, bool nullLock, IDBService<Error> errorLog)
+        {
+            _baseSrv = new DBService<T, IdType>(connectionKey, nullLock, errorLog);
+        }
+
 
         private DBService<T, IdType> _baseSrv = null;
 
