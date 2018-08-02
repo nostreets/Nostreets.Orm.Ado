@@ -81,6 +81,9 @@ namespace NostreetsORM
             }
             catch (Exception ex)
             {
+                if (errorLog != null)
+                    _errorLog.Insert(new Error(ex));
+
                 throw ex;
             }
         }
@@ -276,6 +279,26 @@ namespace NostreetsORM
                 };
         }
 
+        private bool NeedsIdProp(Type type)
+        {
+            if (type.IsEnum)
+                return true;
+
+
+            bool result = true;
+            PropertyInfo pk = type.GetPropertiesByAttribute<KeyAttribute>()?.FirstOrDefault() ?? type.GetProperties()[0];
+
+            if (!type.IsClass)
+                result = false;
+
+            else if (pk.Name.ToLower().Contains("id") && (pk.PropertyType == typeof(int) || pk.PropertyType == typeof(Guid) || pk.PropertyType == typeof(string)))
+                result = false;
+
+
+            return result;
+
+        }
+
         private string GetMappedTypesXML()
         {
 
@@ -431,27 +454,6 @@ namespace NostreetsORM
                   : (type.IsClass || type.IsEnum)
                   ? true
                   : false;
-        }
-
-        private bool NeedsIdProp(Type type)
-        {
-            bool result = true;
-            PropertyInfo pk = type.GetPropertiesByAttribute<KeyAttribute>()?.FirstOrDefault();
-
-            if (!type.IsClass)
-                result = false;
-
-            else if (pk != null && (pk.PropertyType == typeof(int) || pk.PropertyType == typeof(Guid) || pk.PropertyType == typeof(string)) && pk.Name.ToLower().Contains("id"))
-                result = false;
-
-            else if (type.GetProperties()[0].Name.ToLower().Contains("id") && (type.GetProperties()[0].PropertyType == typeof(int) || type.GetProperties()[0].PropertyType == typeof(Guid) || type.GetProperties()[0].PropertyType == typeof(string)))
-                result = false;
-
-            else if (pk != null)
-                throw new Exception("Primary Key must be the data type of Int32, Guid, or string...");
-
-            return result;
-
         }
 
         private int GetPKOrdinalOfType(Type type)
