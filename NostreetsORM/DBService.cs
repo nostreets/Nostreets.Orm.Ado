@@ -41,7 +41,8 @@ namespace NostreetsORM
             }
             catch (Exception ex)
             {
-                _errorLog.Insert(new Error(ex));
+                if (errorLog != null)
+                    _errorLog.Insert(new Error(ex));
 
                 throw ex;
             }
@@ -97,7 +98,8 @@ namespace NostreetsORM
             }
             catch (Exception ex)
             {
-                _errorLog.Insert(new Error(ex));
+                if (errorLog != null)
+                    _errorLog.Insert(new Error(ex));
 
                 throw ex;
             }
@@ -124,7 +126,8 @@ namespace NostreetsORM
             }
             catch (Exception ex)
             {
-                _errorLog.Insert(new Error(ex));
+                if (errorLog != null)
+                    _errorLog.Insert(new Error(ex));
 
                 throw ex;
             }
