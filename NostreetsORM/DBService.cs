@@ -152,6 +152,7 @@ namespace NostreetsORM
 
         #region Internal Logic
 
+        [Trace]
         private void SetUp(Type type, bool nullLock)
         {
             if (NeedsIdProp(type))
