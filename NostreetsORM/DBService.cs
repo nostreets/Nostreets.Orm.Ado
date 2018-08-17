@@ -15,6 +15,7 @@ using Newtonsoft.Json;
 using System.ComponentModel.DataAnnotations;
 using NostreetsExtensions.Helpers.QueryProvider;
 using NostreetsExtensions.DataControl.Classes;
+using Newtonsoft.Json.Linq;
 
 namespace NostreetsORM
 {
@@ -42,7 +43,18 @@ namespace NostreetsORM
             catch (Exception ex)
             {
                 if (errorLog != null)
-                    _errorLog.Insert(new Error(ex));
+                    _errorLog.Insert(
+                     new Error(ex, JObject.FromObject(
+                         new
+                         {
+                             TableLayer = _tableLayer,
+                             LastQuery = _lastQueryExcuted,
+                             Type = _type,
+                             IdType = IdType,
+                             IgnoredProps = _ignoredProps,
+                             NullLock = _nullLock
+                         }).ToString())
+                 );
 
                 throw ex;
             }
@@ -83,7 +95,18 @@ namespace NostreetsORM
             catch (Exception ex)
             {
                 if (errorLog != null)
-                    _errorLog.Insert(new Error(ex));
+                    _errorLog.Insert(
+                      new Error(ex, JObject.FromObject(
+                          new
+                          {
+                              TableLayer = _tableLayer,
+                              LastQuery = _lastQueryExcuted,
+                              Type = _type,
+                              IdType = IdType,
+                              IgnoredProps = _ignoredProps,
+                              NullLock = _nullLock
+                          }).ToString())
+                  );
 
                 throw ex;
             }
@@ -99,7 +122,18 @@ namespace NostreetsORM
             catch (Exception ex)
             {
                 if (errorLog != null)
-                    _errorLog.Insert(new Error(ex));
+                    _errorLog.Insert(
+                        new Error(ex, JObject.FromObject(
+                            new
+                            {
+                                TableLayer = _tableLayer,
+                                LastQuery = _lastQueryExcuted,
+                                Type = _type,
+                                IdType = IdType,
+                                IgnoredProps = _ignoredProps,
+                                NullLock = _nullLock
+                            }).ToString())
+                    );
 
                 throw ex;
             }
@@ -127,18 +161,25 @@ namespace NostreetsORM
             catch (Exception ex)
             {
                 if (errorLog != null)
-                    _errorLog.Insert(new Error(ex));
+                    _errorLog.Insert(
+                     new Error(ex, JObject.FromObject(
+                         new
+                         {
+                             TableLayer = _tableLayer,
+                             LastQuery = _lastQueryExcuted,
+                             Type = _type,
+                             IdType = IdType,
+                             IgnoredProps = _ignoredProps,
+                             NullLock = _nullLock
+                         }).ToString())
+                 );
+
 
                 throw ex;
             }
         }
 
-        public Type IdType => _idType;
-
-        public List<EntityMap> TablesAccessed => _mappedEntities;
-
-        public string LastQueryExcuted => _lastQueryExcuted;
-
+        internal Type IdType { get; private set; } = null;
 
         private bool _tableCreation = false,
                      _nullLock = false;
@@ -148,14 +189,12 @@ namespace NostreetsORM
                                            _procTemplates = null;
         private Dictionary<Type, PropertyInfo[]> _ignoredProps = null;
         private string _lastQueryExcuted = null;
-        private Type _idType = null;
         private List<EntityMap> _mappedEntities = null;
         private IDBService<Error> _errorLog = null;
 
 
         #region Internal Logic
 
-        [Trace]
         private void SetUp(Type type, bool nullLock)
         {
             if (NeedsIdProp(type))
@@ -166,9 +205,10 @@ namespace NostreetsORM
 
             SetUpQueries();
 
+            IdType = type.GetProperties()[GetPKOrdinalOfType(type)].PropertyType;
+
             _type = type;
             _nullLock = nullLock;
-            _idType = type.GetProperties()[GetPKOrdinalOfType(type)].PropertyType;
             _ignoredProps = GetIngoredProperties(_type);
             _mappedEntities = GetMappedTypes();
 
@@ -178,7 +218,7 @@ namespace NostreetsORM
 
 
             bool doesExist = CheckIfTableExist(_type),
-                 isCurrent = TablesAccessed.All(a => CheckIfTypeIsCurrent(a.Type));
+                 isCurrent = _mappedEntities.All(a => CheckIfTypeIsCurrent(a.Type));
 
 
 
@@ -189,7 +229,7 @@ namespace NostreetsORM
             }
             else if (!isCurrent)
             {
-                IEnumerable<EntityMap> tablesToUpdate = TablesAccessed.Where(a => !CheckIfTypeIsCurrent(a.Type));
+                IEnumerable<EntityMap> tablesToUpdate = _mappedEntities.Where(a => !CheckIfTypeIsCurrent(a.Type));
 
                 foreach (EntityMap tbl in tablesToUpdate)
                     BackupAndDropType(tbl);
@@ -305,14 +345,7 @@ namespace NostreetsORM
 
         private string GetMappedTypesXML()
         {
-
-            List<EntityMap> result = new List<EntityMap>();
-
-            //foreach (Type tbl in GetRelationships(_type))
-            //    MapType(tbl, ref result);
-            MapType(_type, ref result);
-
-            return result.XmlSerialize();
+            return GetMappedTypes().XmlSerialize();
         }
 
         private List<EntityMap> GetMappedTypes()
@@ -567,7 +600,7 @@ namespace NostreetsORM
 
         private void BackupAndDropType(EntityMap map)
         {
-            IEnumerable<EntityMap> tblsThatReferType = TablesAccessed.Where(a => (a.Association.Length > 0 && a.Association.Any(b => b.Type == map.Type)) && a != map);
+            IEnumerable<EntityMap> tblsThatReferType = _mappedEntities.Where(a => (a.Association.Length > 0 && a.Association.Any(b => b.Type == map.Type)) && a != map);
             EntityAssociation[] tblsTypeRefers = map.Association; //(TablesAccessed.Any(a => a == map)) ? TablesAccessed.Single(a => a == map).Association : null;
 
 
@@ -599,9 +632,9 @@ namespace NostreetsORM
             if (type.IsEnum)
                 return;
 
-            EntityMap map = (TablesAccessed.Any(a => a.Type == type)) ? TablesAccessed.Single(a => a.Type == type) : null;
-            IEnumerable<EntityMap> collectionRelations = TablesAccessed.Any(a => a.Type.IsCollection() && a.Association.Any(b => b.Type == type))
-                                                       ? TablesAccessed.Where(a => a.Type.IsCollection() && a.Association.Any(b => b.Type == type))
+            EntityMap map = (_mappedEntities.Any(a => a.Type == type)) ? _mappedEntities.Single(a => a.Type == type) : null;
+            IEnumerable<EntityMap> collectionRelations = _mappedEntities.Any(a => a.Type.IsCollection() && a.Association.Any(b => b.Type == type))
+                                                       ? _mappedEntities.Where(a => a.Type.IsCollection() && a.Association.Any(b => b.Type == type))
                                                        : null;
 
             if (map != null)
@@ -625,7 +658,7 @@ namespace NostreetsORM
 
         private void DeleteCreationScraps()
         {
-            List<Type> tbls = TablesAccessed.Select(a => a.Type).ToList();
+            List<Type> tbls = _mappedEntities.Select(a => a.Type).ToList();
             for (int i = 0; i < tbls.Count; i++)
             {
                 if (tbls[i].GetProperties().Length > 0 && tbls[i].GetProperties().Any(a => a.PropertyType.IsCollection()))
@@ -668,6 +701,10 @@ namespace NostreetsORM
             else
                 switch (type.Name)
                 {
+                    case nameof(JObject):
+                        statement = "JSON";
+                        break;
+
                     case nameof(Guid):
                         statement = "UNIQUEIDENTIFIER" + ((needsDefault) ? " DEFAULT(NEWID())" : "");
                         break;
@@ -2605,7 +2642,7 @@ namespace NostreetsORM
         {
             try
             {
-                if (id.GetType() != _idType)
+                if (id.GetType() != IdType)
                     throw new Exception("id is not the right Type and cannot Delete...");
 
                 Delete(_type, id);
@@ -2623,7 +2660,7 @@ namespace NostreetsORM
         {
             try
             {
-                if (id.GetType() != _idType)
+                if (id.GetType() != IdType)
                     throw new Exception("id is not the right Type and cannot Get...");
 
                 return (converter == null)
@@ -2766,7 +2803,7 @@ namespace NostreetsORM
                 if (model.GetPropertyValue("Id") == null)
                     throw new Exception("model's Id propery has to equal an PK in the Database to be able to Update...");
 
-                if (model.GetPropertyValue("Id").GetType() != _idType)
+                if (model.GetPropertyValue("Id").GetType() != IdType)
                     throw new Exception("model's Id propery has to equal the same Type as the Id column in the Database to be able to Update...");
 
                 Update(model, model.GetPropertyValue("Id"), _type);
@@ -2790,7 +2827,7 @@ namespace NostreetsORM
                 if (model.GetPropertyValue("Id") == null)
                     throw new Exception("model's Id propery has to equal an PK in the Database to be able to Update...");
 
-                if (model.GetPropertyValue("Id").GetType() != _idType)
+                if (model.GetPropertyValue("Id").GetType() != IdType)
                     throw new Exception("model's Id propery has to equal the same Type as the Id column in the Database to be able to Update...");
 
                 Update(converter(model), model.GetPropertyValue("Id"), _type);
@@ -2817,7 +2854,7 @@ namespace NostreetsORM
                 if (collection.ElementAt(0).GetPropertyValue("Id") == null)
                     throw new Exception("model's Id propery has to equal an PK in the Database to be able to Update...");
 
-                if (collection.ElementAt(0).GetPropertyValue("Id").GetType() != _idType)
+                if (collection.ElementAt(0).GetPropertyValue("Id").GetType() != IdType)
                     throw new Exception("model's Id propery has to equal the same Type as the Id column in the Database to be able to Update...");
 
                 foreach (object model in collection)
@@ -2845,7 +2882,7 @@ namespace NostreetsORM
                 if (collection.ElementAt(0).GetPropertyValue("Id") == null)
                     throw new Exception("model's Id propery has to equal an PK in the Database to be able to Update...");
 
-                if (collection.ElementAt(0).GetPropertyValue("Id").GetType() != _idType)
+                if (collection.ElementAt(0).GetPropertyValue("Id").GetType() != IdType)
                     throw new Exception("model's Id propery has to equal the same Type as the Id column in the Database to be able to Update...");
 
                 foreach (object model in collection)
@@ -2984,10 +3021,10 @@ namespace NostreetsORM
             _baseSrv = new DBService(typeof(T), connectionKey, nullLock, errorLog);
         }
 
+        internal Type IdType => _baseSrv.IdType;
 
         private DBService _baseSrv = null;
 
-        public Type IdType => _baseSrv.IdType;
 
         public List<T> GetAll()
         {
