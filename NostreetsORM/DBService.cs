@@ -1469,7 +1469,7 @@ namespace NostreetsORM
             _tableCreation = true;
             string result = null;
 
-            if (NeedsIdProp(type))
+            if (NeedsIdProp(type) && !type.IsEnum)
                 type = type.AddProperty(typeof(int), "Id");
 
             int pkOrdinal = GetPKOrdinalOfType(type);
