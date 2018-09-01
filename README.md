@@ -4,15 +4,28 @@ I used Entity Framework's Code First Concept and made a mapper that creates the 
 
 #### Example
 ```C#
-
 using NostreetsORM;
 
-DBService<CustomClass> srv = new DBService<CustomClass>("SomeKeyInWebConfig");
+//CustomClass PK is the first public property by default or needs to be targeted via [Key] attribute and is an type of Int32, Guid, or String and contains Id in the name to be managed by DBService...
 
-List<CustomClass> list = srv.GetAll();
-CustomClass obj = srv.Get(9);
+DBService<CustomClass> srv = new DBService(CustomClass, "SomeKeyInWebConfig");
+DBService<CustomClass> srv = new DBService<CustomClass>("SomeKeyInWebConfig");
+DBService<CustomClass> srv = new DBService<CustomClass, int>("SomeKeyInWebConfig");
+DBService<CustomClass> srv = new DBService<CustomClass, int, CustomClassAddRequest, CustomClassUpdateRequest>("SomeKeyInWebConfig");
+
+srv.Backup("Custom Back Path (C://ORMBackups is traget if null)");
+
 srv.Insert(obj);
 srv.Update(obj);
 srv.Delete(7);
-
+List<CustomClass> objs = srv.GetAll();
+IEnumerable<object> obj = srv.Where((a) => {a.Id == 7});
+CustomClass obj = srv.FirstOrDefault((a) => {a.Type == "Classic"});
+CustomClass obj = srv.Get(9);
 ```
+
+***
+
+- Dependencies
+  - 
+    - NostreetsExtensions

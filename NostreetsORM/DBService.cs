@@ -198,7 +198,7 @@ namespace NostreetsORM
         private void SetUp(Type type, bool nullLock)
         {
             if (NeedsIdProp(type))
-                throw new Exception("type's first public property needs to be an type of int or Guid named Id to be managed by DBService...");
+                throw new Exception("type's PK is the first public property by default or needs to be targeted via [Key] attribute and is an type of Int32, Guid, or String and contains Id in the name to be managed by DBService...");
 
             if (!ShouldNormalize(type))
                 throw new Exception("type's needs to be a custom class to be managed by DBService...");
@@ -315,18 +315,26 @@ namespace NostreetsORM
                 };
         }
 
-        private bool NeedsIdProp(Type type)
+        private bool NeedsIdProp(Type type, out int ordinal)
         {
+            ordinal = 0;
+
             if (type.IsEnum)
                 return true;
 
             bool result = true;
             PropertyInfo pk = type.GetPropertiesByAttribute<KeyAttribute>()?.FirstOrDefault() ?? type.GetProperties()[0];
 
+
             if (!type.IsClass)
                 result = false;
             else if (pk.Name.ToLower().Contains("id") && (pk.PropertyType == typeof(int) || pk.PropertyType == typeof(Guid) || pk.PropertyType == typeof(string)))
                 result = false;
+
+            if (result)
+                foreach (PropertyInfo p in type.GetProperties())
+                    if (pk.Name != p.Name && pk.PropertyType != p.PropertyType)
+                        ordinal++;
 
             return result;
         }
@@ -351,16 +359,17 @@ namespace NostreetsORM
 
             Func<EntityColumn[]> getColumns = () =>
             {
+                bool needsPK = NeedsIdProp(type, out int ordinal);
                 List<EntityColumn> list = new List<EntityColumn>();
                 List<PropertyInfo> baseProps = type.GetProperties().ToList();
-                PropertyInfo pk = baseProps[GetPKOrdinalOfType(type)];
+                PropertyInfo pk = baseProps[ordinal];
 
                 foreach (PropertyInfo prop in baseProps)
                 {
                     if (prop.PropertyType.IsCollection() || (_ignoredProps.ContainsKey(type) && _ignoredProps[type].Contains(prop)))
                         continue;
 
-                    bool isPk = (pk == prop) ? true : false;
+                    bool isPk = (pk != prop || needsPK) ? false : true;
                     list.Add(new EntityColumn(
                           prop.Name
                         , ShouldNormalize(prop.PropertyType) ? prop.Name + "Id" : prop.Name
@@ -474,24 +483,6 @@ namespace NostreetsORM
                   : false;
         }
 
-        private int GetPKOrdinalOfType(Type type)
-        {
-            int index = 0,
-                result = 0;
-            PropertyInfo prop = type.GetPropertiesByAttribute<KeyAttribute>()?.FirstOrDefault();
-
-            if (prop != null)
-                foreach (PropertyInfo p in type.GetProperties())
-                {
-                    if (prop.Name == p.Name && prop.PropertyType == p.PropertyType)
-                        result = index;
-                    else
-                        index++;
-                }
-
-            return result;
-        }
-
         private object GetNormalizedSchema(Type type, string prefix = null)
         {
             List<string> propNames = new List<string>();
@@ -499,7 +490,7 @@ namespace NostreetsORM
 
             if (!type.IsCollection())
             {
-                if (NeedsIdProp(type))
+                if (NeedsIdProp(type, out int ordinal))
                     type = type.AddProperty(typeof(int), "Id");
 
                 PropertyInfo[] baseProps = type.GetProperties();
@@ -899,7 +890,7 @@ namespace NostreetsORM
 
             List<int> skippedProps = new List<int>(); ;
             string query = null;
-            int pkOrdinal = GetPKOrdinalOfType(type);
+            bool needsPK = NeedsIdProp(type, out int pkOrdinal);
 
             string inputParams = null,
                    columns = null,
@@ -924,7 +915,7 @@ namespace NostreetsORM
                     continue;
                 }
 
-                if (i != pkOrdinal /*> 0*/)
+                if (!needsPK && i != pkOrdinal)
                 {
                     inputs.Add("@" + props[i].Name + " "
                         + DeterminSQLType(props[i].PropertyType, false)
@@ -966,7 +957,7 @@ namespace NostreetsORM
                         "Inner Join " + GetTableName(props[i].PropertyType)
                         + " AS _" + props[i].Name
                         + " ON _" + props[i].Name + "." +
-                        (props[i].PropertyType.IsEnum || NeedsIdProp(props[i].PropertyType)
+                        (props[i].PropertyType.IsEnum || needsPK
                             ? "Id"
                             : GetPKOfTable(props[i].PropertyType))
                         + " = " + GetTableName(type) + "."
@@ -1083,7 +1074,7 @@ namespace NostreetsORM
             }
             else if (ShouldNormalize(type))
             {
-                int pkOrdinal = GetPKOrdinalOfType(type);
+                bool needsPK = NeedsIdProp(type, out int pkOrdinal);
                 List<string> FKs = new List<string>();
                 PropertyInfo[] props = type.GetProperties();
 
@@ -1207,7 +1198,7 @@ namespace NostreetsORM
                 }
                 else
                 {
-                    int pkOrdinal = GetPKOrdinalOfType(type);
+                    bool needsPK = NeedsIdProp(type, out int pkOrdinal);
                     List<PropertyInfo> baseProps = type.GetProperties().ToList();
                     List<PropertyInfo> includedProps = (_ignoredProps != null && _ignoredProps.Count > 0 && _ignoredProps[type] != null && _ignoredProps[type].Length > 0)
                                                             ? baseProps.Where(a => !_ignoredProps[type].Contains(a) || a.PropertyType.IsCollection()).ToList()
@@ -1216,7 +1207,7 @@ namespace NostreetsORM
                     List<string> oldColumns = GetOldColumns(type);
                     List<string> matchingColumns = oldColumns.Where(a => includedProps.Any(b => a == ((ShouldNormalize(b.PropertyType)) ? b.Name + "Id" : b.Name))).ToList();
 
-                    Type pkOrdinalType = baseProps.Where((a, b) => b == pkOrdinal).Single().PropertyType;
+                    Type pkOrdinalType = pkOrdinal != 0 ? baseProps.Where((a, b) => b == pkOrdinal).Single().PropertyType : typeof(int);
 
                     string columns = String.Join(", ", matchingColumns);
 
@@ -1245,7 +1236,7 @@ namespace NostreetsORM
                 catch (Exception ex)
                 {
                     DropBackupTable(type, prefix);
-                    ex.Message.Log();
+                    throw ex;
                 }
             }
         }
@@ -1407,10 +1398,8 @@ namespace NostreetsORM
             _tableCreation = true;
             string result = null;
 
-            if (NeedsIdProp(type) && !type.IsEnum)
+            if (NeedsIdProp(type, out int pkOrdinal) && !type.IsEnum)
                 type = type.AddProperty(typeof(int), "Id");
-
-            int pkOrdinal = GetPKOrdinalOfType(type);
 
             if (!CheckIfTypeIsCurrent(type))
             {
@@ -1519,7 +1508,9 @@ namespace NostreetsORM
 
         private string GetPKOfTable(Type type, string prefix = null)
         {
-            if (type.IsEnum || NeedsIdProp(type))
+            bool needsPK = NeedsIdProp(type, out int pkOrdinal);
+
+            if (type.IsEnum || needsPK)
                 return "Id";
 
             string result = null;
@@ -1544,10 +1535,8 @@ namespace NostreetsORM
             }
             else
             {
-                int oridnal = GetPKOrdinalOfType(type);
-                result = type.GetProperties().ElementAt(oridnal).Name;
+                result = type.GetProperties().ElementAt(pkOrdinal).Name;
             }
-
             return result;
         }
 
@@ -1609,7 +1598,7 @@ namespace NostreetsORM
                                excludedProps = _ignoredProps.ContainsKey(type) ? _ignoredProps[type] : null, //type.GetPropertiesByAttribute<NotMappedAttribute>(),
                                includedProps = baseProps.Where(a => (excludedProps != null && !excludedProps.Contains(a)) || !a.PropertyType.IsCollection()).ToArray();
 
-                if (NeedsIdProp(type))
+                if (NeedsIdProp(type, out int pkOrdinal))
                 {
                     for (int i = 0; i < includedProps.Length; i++)
                         if (includedProps[i].Name == "Id") { includedProps[i] = type.AddProperty(typeof(int), "Id").GetProperty("Id"); break; }
@@ -1938,7 +1927,7 @@ namespace NostreetsORM
                 throw new Exception("model Parameter is the wrong type...");
 
             object id = 0;
-            int pkOrdinal = GetPKOrdinalOfType(type);
+            int? pkOrdinal = GetPKOrdinalOfType(type);
 
             _lastQueryExcuted = "dbo." + GetTableName(type) + "_Insert";
 
@@ -1949,7 +1938,7 @@ namespace NostreetsORM
 
                            foreach (PropertyInfo prop in props)
                            {
-                               if (prop == props[pkOrdinal])
+                               if (pkOrdinal != null && prop == props[pkOrdinal.Value])
                                    continue;
                                else if (prop.PropertyType.IsCollection())
                                    continue;
@@ -2234,7 +2223,7 @@ namespace NostreetsORM
             if (ids == null && ids.Length == 0)
                 return;
 
-            int pkOrdinal = GetPKOrdinalOfType(type);
+            bool needsPK = NeedsIdProp(type, out int pkOrdinal);
             object result = null;
             List<object> tableObjs = null;
             Type tableType = GetNormalizedSchema(type).GetType();
@@ -2259,11 +2248,19 @@ namespace NostreetsORM
                     tableObjs.Add(tableObj);
                 }, null, cmd => cmd.CommandType = CommandType.Text);
 
+
+
             foreach (object item in tableObjs)
                 foreach (PropertyInfo arr in baseProps.Where(a => a.PropertyType.IsCollection() /*&& !a.PropertyType.GetTypeOfT().IsSystemType()*/))
                 {
                     Type listType = arr.PropertyType.GetTypeOfT();
-                    DeleteCollection((int)item.GetPropertyValue((NeedsIdProp(arr.PropertyType)) ? "Id" : type.GetProperties()[pkOrdinal].Name), type, arr);
+                    DeleteCollection(
+                        (int)item.GetPropertyValue(
+                            needsPK ? "Id" : type.GetProperties()[pkOrdinal].Name
+                        )
+                        , type
+                        , arr
+                    );
                 }
 
             query = _partialProcs["DeleteRows"].FormatString(GetTableName(type))
@@ -2379,22 +2376,28 @@ namespace NostreetsORM
             Type type = pair.Value;
             object entity = type.Instantiate();
             string typeName = type.Name.SafeName();
-            int pkOrdinal = GetPKOrdinalOfType(type);
 
             if (!type.IsCollection())
             {
                 foreach (PropertyInfo prop in type.GetProperties())
                 {
-                    KeyValuePair<string, Type> propPair = new KeyValuePair<string, Type>(GetTableName(prop.PropertyType, (ShouldNormalize(prop.PropertyType) && !prop.PropertyType.IsEnum) ? null : typeName + '_' + prop.Name + '_'), prop.PropertyType);
+                    bool needsPK = NeedsIdProp(prop.PropertyType, out int pkOrdinal);
+                    KeyValuePair<string, Type> propPair =
+                        new KeyValuePair<string, Type>(
+                            GetTableName(prop.PropertyType,
+                                        (ShouldNormalize(prop.PropertyType) && !prop.PropertyType.IsEnum) ? null : typeName + '_' + prop.Name + '_'
+                            ), prop.PropertyType
+                        );
 
                     if (ShouldNormalize(prop.PropertyType) && !prop.PropertyType.IsEnum)
                     {
                         object rowOfProp = tblEntities[propPair]
                                              .FirstOrDefault(
-                                                a => a.GetPropertyValue((NeedsIdProp(prop.PropertyType))
-                                                        ? "Id"
-                                                        : prop.PropertyType.GetProperties()[GetPKOrdinalOfType(prop.PropertyType)].Name)
-                                                    .Equals(tblOfType.GetPropertyValue(prop.Name + "Id"))
+                                                a => a.GetPropertyValue(
+                                                        needsPK
+                                                            ? "Id"
+                                                            : prop.PropertyType.GetProperties()[pkOrdinal].Name
+                                                        ).Equals(tblOfType.GetPropertyValue(prop.Name + "Id"))
                                              );
 
                         object property = InstantateFromIds(propPair, rowOfProp, tblEntities);
@@ -2413,11 +2416,19 @@ namespace NostreetsORM
                             {
                                 object[] relations = tblEntities[propPair]
                                                                     .Where(a => a.GetPropertyValue(typeName + "Id")
-                                                                    .Equals(tblOfType.GetPropertyValue((NeedsIdProp(prop.PropertyType)) ? "Id" : prop.PropertyType.GetProperties()[pkOrdinal].Name))).ToArray();
+                                                                    .Equals(tblOfType.GetPropertyValue(
+                                                                        needsPK
+                                                                            ? "Id"
+                                                                            : prop.PropertyType.GetProperties()[pkOrdinal].Name)
+                                                                    )).ToArray();
 
                                 List<object> rowsOfList = tblEntities[childPair].Where(a =>
                                                             relations.Any(b => b.GetPropertyValue(listType.Name + "Id")
-                                                            .Equals(a.GetPropertyValue((NeedsIdProp(listType)) ? "Id" : listType.GetProperties()[pkOrdinal].Name)))).ToList();
+                                                            .Equals(a.GetPropertyValue(
+                                                                needsPK
+                                                                    ? "Id"
+                                                                    : listType.GetProperties()[pkOrdinal].Name)
+                                                            ))).ToList();
 
                                 foreach (object item in rowsOfList)
                                 {
