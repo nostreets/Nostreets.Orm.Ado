@@ -197,7 +197,7 @@ namespace NostreetsORM
 
         private void SetUp(Type type, bool nullLock)
         {
-            if (NeedsIdProp(type))
+            if (NeedsIdProp(type, out int pkOrdinal))
                 throw new Exception("type's PK is the first public property by default or needs to be targeted via [Key] attribute and is an type of Int32, Guid, or String and contains Id in the name to be managed by DBService...");
 
             if (!ShouldNormalize(type))
@@ -205,7 +205,7 @@ namespace NostreetsORM
 
             SetUpQueries();
 
-            IdType = type.GetProperties()[GetPKOrdinalOfType(type)].PropertyType;
+            IdType = type.GetProperties()[pkOrdinal].PropertyType;
 
             _type = type;
             _nullLock = nullLock;
@@ -328,10 +328,11 @@ namespace NostreetsORM
 
             if (!type.IsClass)
                 result = false;
+
             else if (pk.Name.ToLower().Contains("id") && (pk.PropertyType == typeof(int) || pk.PropertyType == typeof(Guid) || pk.PropertyType == typeof(string)))
                 result = false;
 
-            if (result)
+            if (!result)
                 foreach (PropertyInfo p in type.GetProperties())
                     if (pk.Name != p.Name && pk.PropertyType != p.PropertyType)
                         ordinal++;
@@ -1111,7 +1112,7 @@ namespace NostreetsORM
                         );
                 }
 
-                columns.Add("CONSTRAINT [PK_" + GetTableName(type) + "] PRIMARY KEY CLUSTERED ([" + props[pkOrdinal].Name + "] ASC)," + String.Join(", ", FKs.ToArray()));
+                columns.Add("CONSTRAINT [PK_" + GetTableName(type) + "] PRIMARY KEY CLUSTERED ([" + props[pkOrdinal].PropertyType.Name + "] ASC)," + String.Join(", ", FKs.ToArray()));
             }
 
             string table = String.Concat(columns.ToArray());
@@ -1793,8 +1794,8 @@ namespace NostreetsORM
             object result = null;
             object tableObj = GetNormalizedSchema(type);
             Type tableType = tableObj.GetType();
-            int pkOrdinal = GetPKOrdinalOfType(type);
-            string pkName = (!type.IsEnum && !NeedsIdProp(type)) ? type.GetProperties()[pkOrdinal].Name : "Id";
+            bool needsId = NeedsIdProp(type, out int pkOrdinal);
+            string pkName = (!type.IsEnum && !needsId) ? type.GetProperties()[pkOrdinal].Name : "Id";
 
             _lastQueryExcuted = "dbo." + GetTableName(type) + "_SelectById";
 
@@ -1819,12 +1820,12 @@ namespace NostreetsORM
             PropertyInfo[] baseProps = type.GetProperties();
             object tableObj = GetNormalizedSchema(type);
             Type tableType = tableObj.GetType();
-            int pkOrdinal = GetPKOrdinalOfType(type);
+            bool needsId = NeedsIdProp(type, out int pkOrdinal);
 
             _lastQueryExcuted = "dbo." + GetTableName(type) + "_SelectById";
 
             Instance.ExecuteCmd(() => Connection, "dbo." + GetTableName(type) + "_SelectById",
-                param => param.Add(new SqlParameter((!type.IsEnum && !NeedsIdProp(type)) ? type.GetProperties()[pkOrdinal].Name : "Id", id)),
+                param => param.Add(new SqlParameter((!type.IsEnum && !needsId) ? type.GetProperties()[pkOrdinal].Name : "Id", id)),
                 (reader, set) =>
                 {
                     tableObj = DataMapper.MapToObject(reader, tableType);
@@ -1836,7 +1837,7 @@ namespace NostreetsORM
             _lastQueryExcuted = "dbo." + GetTableName(type) + "_Delete";
 
             Instance.ExecuteNonQuery(() => Connection, "dbo." + GetTableName(type) + "_Delete",
-               param => param.Add(new SqlParameter((NeedsIdProp(type)) ? "Id" : type.GetProperties()[pkOrdinal].Name, id)));
+               param => param.Add(new SqlParameter((needsId) ? "Id" : type.GetProperties()[pkOrdinal].Name, id)));
 
             foreach (PropertyInfo prop in baseProps.Where(a => ShouldNormalize(a.PropertyType) && !a.PropertyType.IsEnum))
                 Delete(prop.PropertyType, tableObj.GetPropertyValue(prop.Name + "Id"));
@@ -1927,7 +1928,7 @@ namespace NostreetsORM
                 throw new Exception("model Parameter is the wrong type...");
 
             object id = 0;
-            int? pkOrdinal = GetPKOrdinalOfType(type);
+            bool needsId = NeedsIdProp(type, out int pkOrdinal);
 
             _lastQueryExcuted = "dbo." + GetTableName(type) + "_Insert";
 
@@ -1938,17 +1939,21 @@ namespace NostreetsORM
 
                            foreach (PropertyInfo prop in props)
                            {
-                               if (pkOrdinal != null && prop == props[pkOrdinal.Value])
+                               if (!needsId && prop == props[pkOrdinal])
                                    continue;
+
                                else if (prop.PropertyType.IsCollection())
                                    continue;
+
                                else if (prop.PropertyType.IsEnum)
                                    if (prop.GetValue(model) != null)
                                        param.Add(new SqlParameter(prop.Name, (int)prop.GetValue(model)));
                                    else
                                        throw new Exception("Any property in model that is an Enum cannot be null");
+
                                else if (ShouldNormalize(prop.PropertyType) && ids.Keys.Any(a => a == prop.PropertyType))
                                    param.Add(new SqlParameter(prop.Name, ids[prop.PropertyType]));
+
                                else
                                {
                                    object value = null;
@@ -1974,7 +1979,7 @@ namespace NostreetsORM
             if (model == null)
                 model = type.Instantiate();
 
-            int pkOrdinal = GetPKOrdinalOfType(type);
+            bool needsId = NeedsIdProp(type, out int pkOrdinal);
             object result = type.Instantiate();
             object tableObj = GetNormalizedSchema(type);
             Type tableType = tableObj.GetType();
@@ -1982,7 +1987,7 @@ namespace NostreetsORM
             _lastQueryExcuted = "dbo." + GetTableName(type) + "_SelectById";
 
             Instance.ExecuteCmd(() => Connection, "dbo." + GetTableName(type) + "_SelectById",
-                param => param.Add(new SqlParameter((!type.IsEnum && !NeedsIdProp(type)) ? type.GetProperties()[pkOrdinal].Name : "Id", id)),
+                param => param.Add(new SqlParameter((!type.IsEnum && !needsId) ? type.GetProperties()[pkOrdinal].Name : "Id", id)),
                 (reader, set) =>
                 {
                     tableObj = DataMapper.MapToObject(reader, tableType);
@@ -1994,14 +1999,13 @@ namespace NostreetsORM
                       param =>
                       {
                           PropertyInfo[] props = type.GetProperties();
-                          bool needId = NeedsIdProp(type);
 
-                          if (needId)
+                          if (needsId)
                               param.Add(new SqlParameter("Id", id));
 
                           foreach (PropertyInfo prop in props)
                           {
-                              if (!needId && prop == props[pkOrdinal])
+                              if (!needsId && prop == props[pkOrdinal])
                                   param.Add(new SqlParameter(prop.Name, id));
                               else if (prop.PropertyType.IsCollection())
                                   continue;
