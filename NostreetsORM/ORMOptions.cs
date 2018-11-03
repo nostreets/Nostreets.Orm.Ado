@@ -1,4 +1,5 @@
-﻿using NostreetsExtensions.DataControl.Classes;
+﻿using System;
+using NostreetsExtensions.DataControl.Classes;
 using NostreetsExtensions.Interfaces;
 
 namespace NostreetsORM
@@ -14,6 +15,12 @@ namespace NostreetsORM
         public string ConnectionKey { get; set; } = "DefaultConnection";
 
         public IDBService<Error> ErrorLog { get; set; } = null;
+
+        public Action<object> AfterInsert { get; set; } = null;
+
+        public Action<object> AfterUpdate { get; set; } = null;
+
+        public Action<object> AfterDelete { get; set; } = null;
 
     }
 }
