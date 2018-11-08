@@ -81,6 +81,10 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\NostreetsEntities\NostreetsEntities.csproj">
+      <Project>{BD13E863-0848-4BD3-8D9B-C14A12135734}</Project>
+      <Name>NostreetsEntities</Name>
+    </ProjectReference>
     <ProjectReference Include="..\..\NostreetsExtensions\NostreetsExtensions\NostreetsExtensions.csproj">
       <Project>{d75ef23c-2e65-4bf7-90d3-c21c73a3e9c3}</Project>
       <Name>NostreetsExtensions</Name>

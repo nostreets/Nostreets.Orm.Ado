@@ -10,7 +10,6 @@ using System.Reflection;
 
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-
 using NostreetsExtensions.DataControl.Classes;
 using NostreetsExtensions.Extend.Basic;
 using NostreetsExtensions.Extend.Data;
@@ -18,9 +17,6 @@ using NostreetsExtensions.Helpers;
 using NostreetsExtensions.Helpers.QueryProvider;
 using NostreetsExtensions.Interfaces;
 using NostreetsExtensions.Utilities;
-using TableDependency.SqlClient;
-using TableDependency.SqlClient.Base;
-using TableDependency.SqlClient.Base.Enums;
 
 namespace NostreetsORM
 {
@@ -459,7 +455,6 @@ namespace NostreetsORM
 
             SetUpQueryFragments();
             SetUpMappedTypes();
-            SetUpTableWatcher();
 
 
             bool doesExist = CheckIfTableExist(_type),
@@ -562,64 +557,6 @@ namespace NostreetsORM
                     { "SelectBy",  _partialProcs["SelectProcedure"]},
                     { "Delete",  _partialProcs["DeleteProcedure"]}
                 };
-        }
-
-        private void SetUpTableWatcher()
-        {
-
-            object mapper = _type.IntoGenericConstructorAsT(typeof(ModelToTableMapper<>));
-            EntityMap entity = _mappedEntities.First(a => a.Type == _type);
-
-            foreach (EntityColumn col in entity.Columns)
-                mapper.IntoMethod("AddMapping", col.Property, col.Name);
-
-
-
-            _tableWatcher = _type.IntoGenericConstructorAsT(
-                  typeof(SqlTableDependency<>)
-                , new[]
-                {
-                    Connection.ConnectionString,
-                    GetTableName(_type),
-                    null,
-                    mapper,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null
-                }
-            );
-
-            _tableWatcher.GetEvent("OnChanged")
-                .AddEventHandler(_tableWatcher, new EventHandler(
-                (a, b) =>
-                {
-
-                    object args = b;
-                    object e = (ChangeType)args.GetPropertyValue("Entity");
-                    ChangeType action = (ChangeType)args.GetPropertyValue("ChangeType");
-
-                    switch (action)
-                    {
-                        case ChangeType.Delete:
-                            _afterDelete?.Invoke(e);
-                            break;
-
-                        case ChangeType.Insert:
-                            _afterInsert?.Invoke(e);
-                            break;
-
-                        case ChangeType.Update:
-                            _afterUpdate?.Invoke(e);
-                            break;
-                    }
-                }
-            ));
-
-
-
-
         }
 
         private bool ShouldNormalize(Type type)
