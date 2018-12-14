@@ -16,11 +16,5 @@ namespace NostreetsORM
 
         public IDBService<Error> ErrorLog { get; set; } = null;
 
-        public Action<object> AfterInsert { get; set; } = null;
-
-        public Action<object> AfterUpdate { get; set; } = null;
-
-        public Action<object> AfterDelete { get; set; } = null;
-
     }
 }

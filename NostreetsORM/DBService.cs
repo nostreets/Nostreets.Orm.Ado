@@ -5,6 +5,7 @@ using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Data;
 using System.Data.SqlClient;
+using System.Dynamic;
 using System.Linq;
 using System.Reflection;
 
@@ -74,11 +75,7 @@ namespace NostreetsORM
                                             _nullLock = false;
 
         private int _tableLayer = 0;
-        private object _tableWatcher = null;
         private Type _type = null;
-        private Action<object> _afterDelete = null
-                            , _afterInsert = null
-                            , _afterUpdate = null;
 
         internal Type IdType { get; private set; } = null;
 
@@ -169,11 +166,21 @@ namespace NostreetsORM
         {
             List<string> propNames = new List<string>();
             List<Type> propTypes = new List<Type>();
+            List<Tuple<string, Type, Dictionary<Type, object[]>>> props = new List<Tuple<string, Type, Dictionary<Type, object[]>>>();
+            List<Tuple<string, Type, MethodAttributes, Dictionary<Type, ParameterAttributes>, Dictionary<Type, object[]>>> methods =
+                type.GetMethods().Select(a => new Tuple<string, Type, MethodAttributes, Dictionary<Type, ParameterAttributes>, Dictionary<Type, object[]>>(
+                    a.Name, a.ReturnType, a.Attributes,
+                    Basic.ToDictionary(a.GetParameters(), b => new KeyValuePair<Type, ParameterAttributes>(b.ParameterType, b.Attributes)), null
+                )).ToList();
+
 
             if (type.IsEnum)
             {
-                propNames.AddRange(new[] { "Id", "Name", "Value" });
-                propTypes.AddRange(new[] { typeof(int), typeof(string), typeof(int) });
+                props.AddRange(new Tuple<string, Type, Dictionary<Type, object[]>>[] {
+                    new Tuple<string, Type, Dictionary<Type, object[]>>("Id", typeof(int), null),
+                    new Tuple<string, Type, Dictionary<Type, object[]>>("Name", typeof(string), null),
+                    new Tuple<string, Type, Dictionary<Type, object[]>>("Value", typeof(int), null)
+                });
             }
             else if (!type.IsCollection())
             {
@@ -202,7 +209,8 @@ namespace NostreetsORM
                 propNames.AddRange(new[] { prefix?.Split('_')[0] + "Id", (collectionType.IsSystemType()) ? "Serialized" + GetTableName(type) : collectionType.Name + "Id" });
                 propTypes.AddRange(new[] { typeof(int), (collectionType.IsSystemType()) ? typeof(string) : typeof(int) });
             }
-            return ClassBuilder.CreateObject(type.Name, propNames.ToArray(), propTypes.ToArray());
+
+            return ClassBuilder.CreateObject(type.Name, props, methods);
         }
 
         private List<PropertyInfo> GetPropsByAttribute<T>(Type type) where T : Attribute
@@ -332,7 +340,7 @@ namespace NostreetsORM
                            notMappedProps = GetPropsByAttribute<NotMappedAttribute>(type).ToArray();
 
 
-            Func<EntityColumn[]> getColumns = () =>
+            EntityColumn[] getColumns()
             {
                 bool needsPK = NeedsIdProp(type, out int ordinal);
                 List<EntityColumn> list = new List<EntityColumn>();
@@ -359,7 +367,7 @@ namespace NostreetsORM
                 return list.ToArray();
             };
 
-            Func<EntityAssociation[]> getAssociations = () =>
+            EntityAssociation[] getAssociations()
             {
                 List<EntityAssociation> list = new List<EntityAssociation>();
                 PropertyInfo[] props = type.GetProperties().Where(
@@ -379,6 +387,7 @@ namespace NostreetsORM
 
                 return list.ToArray();
             };
+
 
             entities.Add(new EntityMap(
                           type
@@ -401,6 +410,7 @@ namespace NostreetsORM
         private bool NeedsIdProp(Type type, out int ordinal)
         {
             ordinal = 0;
+            PropertyInfo[] props = type.GetProperties();
 
             if (type.IsEnum)
                 return true;
@@ -412,14 +422,14 @@ namespace NostreetsORM
                 return false;
 
             bool result = true;
-            PropertyInfo pk = type.GetPropertiesByAttribute<KeyAttribute>()?.FirstOrDefault() ?? type.GetProperties()[0];
+            PropertyInfo pk = type.GetPropertiesByAttribute<KeyAttribute>()?.FirstOrDefault() ?? props[0];
 
             if (pk.Name.ToLower().Contains("id") && (pk.PropertyType == typeof(int) || pk.PropertyType == typeof(Guid) || pk.PropertyType == typeof(string)))
                 result = false;
 
             if (!result)
             {
-                foreach (PropertyInfo p in type.GetProperties())
+                foreach (PropertyInfo p in props)
                 {
                     if (pk.Name != p.Name || pk.PropertyType != p.PropertyType)
                         ordinal++;
@@ -650,7 +660,6 @@ namespace NostreetsORM
             Query.ExecuteNonQuery(() => Connection, query, null, null, (mod) => mod.CommandType = CommandType.Text);
         }
 
-
         #endregion Internal Logic
 
         #region String Generation
@@ -878,25 +887,19 @@ namespace NostreetsORM
         private string GetProcsForClass(Type type, KeyValuePair<string, string> template)
         {
             if (!ShouldNormalize(type))
-            {
                 throw new Exception("type's Type has to be a custom data type...");
-            }
 
             if (type.IsEnum)
-            {
                 return GetProcsForEnum(type, template);
-            }
+
 
             List<int> skippedProps = new List<int>(); ;
             string query = null;
-            bool needsPK = NeedsIdProp(type, out int pkOrdinal);
-
             string inputParams = null,
                    columns = null,
                    values = null,
                    select = null,
                    joins = null;
-
             List<string> inputs = new List<string>(),
                          colm = new List<string>(),
                          val = new List<string>(),
@@ -904,7 +907,9 @@ namespace NostreetsORM
                          jns = new List<string>(),
                          innerUpdt = new List<string>();
 
+
             PropertyInfo[] props = type.GetProperties();
+            bool needsPK = NeedsIdProp(type, out int pkOrdinal);
 
             for (int i = 0; i < props.Length; i++)
             {
@@ -914,7 +919,7 @@ namespace NostreetsORM
                     continue;
                 }
 
-                if (!needsPK && i != pkOrdinal)
+                if (i != pkOrdinal)
                 {
                     inputs.Add("@" + props[i].Name + " "
                         + DeterminSQLType(props[i].PropertyType, false)
@@ -966,6 +971,7 @@ namespace NostreetsORM
                     );
                 }
 
+
                 sel.Add(
                     GetTableName(type) + ".[" +
                     ((ShouldNormalize(props[i].PropertyType)
@@ -978,11 +984,11 @@ namespace NostreetsORM
                 );
             }
 
-            inputParams = String.Join(" ", inputs.ToArray());
-            columns = String.Join(" ", colm.ToArray());
-            values = String.Join(" ", val.ToArray());
-            select = String.Join(" ", sel.ToArray());
-            joins = String.Join(" ", jns.ToArray());
+            inputParams = string.Join(" ", inputs.ToArray());
+            columns = string.Join(" ", colm.ToArray());
+            values = string.Join(" ", val.ToArray());
+            select = string.Join(" ", sel.ToArray());
+            joins = string.Join(" ", jns.ToArray());
 
             switch (template.Key)
             {
@@ -1415,9 +1421,8 @@ namespace NostreetsORM
             string result = null;
 
             if (NeedsIdProp(type, out int pkOrdinal) && !type.IsEnum)
-            {
                 type = type.AddProperty(typeof(int), "Id");
-            }
+
 
             if (!CheckIfTypeIsCurrent(type))
             {
@@ -1659,7 +1664,7 @@ namespace NostreetsORM
                 #region Declaration
 
                 bool needsId = NeedsIdProp(type, out int pkOrdinal);
-                KeyValuePair<string, Type>[] columnsInTable = Query.GetSchema(() => Connection, GetTableName(type));
+                Dictionary<string, Type> columnsInTable = Query.GetSchema(() => Connection, GetTableName(type));
                 PropertyInfo[] baseProps = type.GetProperties(),
                                excludedProps = GetPropsByAttribute<NotMappedAttribute>(type).ToArray(),
                                includedProps = baseProps.Where(a => (excludedProps != null && !excludedProps.Contains(a)) || !a.PropertyType.IsCollection()).ToArray();
@@ -1830,6 +1835,7 @@ namespace NostreetsORM
             }
             return result;
         }
+
         private List<string> GetProcs(Type type, string prefix = null)
         {
             string query = _partialProcs["GetAllProcs"];
@@ -2109,6 +2115,7 @@ namespace NostreetsORM
 
             return entities;
         }
+
         private int[] GetCollectionIds(object parentId, Type parentType, Type childType)
         {
             if (childType.IsSystemType())
@@ -2660,6 +2667,7 @@ namespace NostreetsORM
                 }
             }
         }
+
         private void UpdateSerializedCollection(Type parentType, PropertyInfo property, object parentId, string serializedCollection)
         {
             string parentTypeName = parentType.Name.SafeName(),
@@ -3074,16 +3082,14 @@ namespace NostreetsORM
             }
         }
 
-        public IEnumerable<object> Where(Func<object, bool> predicate)
+        public List<object> Where(Func<object, bool> predicate)
         {
             try
             {
-                //TSqlFormatter.Format(predicate.ToExpression()).Log();
-
-                IEnumerable<object> result = GetAll();
+                List<object> result = GetAll();
                 if (result != null)
                 {
-                    result = result.Where(predicate);
+                    result = result.Where(predicate).ToList();
                 }
                 else
                 {
@@ -3101,6 +3107,59 @@ namespace NostreetsORM
 
                 throw ex;
             }
+        }
+
+        public List<dynamic> QueryResults(string sql, Dictionary<string, object> parameters)
+        {
+            return QueryResults(Connection.ConnectionString, sql, parameters);
+        }
+
+        public static List<dynamic> QueryResults(string connectionString, string sql, Dictionary<string, object> parameters)
+        {
+            List<dynamic> result = new List<dynamic>();
+
+            void getRow(IDataReader reader, short set)
+            {
+                if (set >= 1)
+                {
+                    if (set == 1)
+                    {
+                        List<dynamic> oldResults = result;
+                        result = new List<dynamic> { new List<dynamic>() };
+                        foreach (dynamic obj in oldResults)
+                            ((List<dynamic>)result[0]).Add(obj);
+                    }
+
+
+                    result.Add(new List<dynamic>());
+
+                    var dataRow = new ExpandoObject() as IDictionary<string, object>;
+                    for (var fieldCount = 0; fieldCount < reader.FieldCount; fieldCount++)
+                        dataRow.Add(reader.GetName(fieldCount), reader[fieldCount]);
+
+                    ((List<dynamic>)result[set]).Add(dataRow);
+                }
+                else
+                {
+                    var dataRow = new ExpandoObject() as IDictionary<string, object>;
+                    for (var fieldCount = 0; fieldCount < reader.FieldCount; fieldCount++)
+                        dataRow.Add(reader.GetName(fieldCount), reader[fieldCount]);
+
+                    result.Add(dataRow);
+                }
+            }
+
+            void setParams(SqlParameterCollection coll)
+            {
+                foreach (KeyValuePair<string, object> param in parameters)
+                    coll.Add(new SqlParameter(param.Key, param.Value));
+            }
+
+            Query.ExecuteCmd(() => new SqlConnection(connectionString), sql, setParams, getRow, null, mod => mod.CommandType = CommandType.Text);
+
+            return result;
+
+
         }
 
         #endregion Public Acess Methods
@@ -3310,14 +3369,14 @@ namespace NostreetsORM
             }
         }
 
-        public IEnumerable<T> Where(Func<T, bool> predicate)
+        public List<T> Where(Func<T, bool> predicate)
         {
             //TSqlFormatter.Format(predicate.ToExpression()).Log();
 
-            IEnumerable<T> result = GetAll();
+            List<T> result = GetAll();
             if (result != null)
             {
-                result = result.Where(predicate);
+                result = result.Where(predicate).ToList();
             }
             else
             {
@@ -3553,15 +3612,15 @@ namespace NostreetsORM
             Update(converter(model));
         }
 
-        public IEnumerable<T> Where(Func<T, bool> predicate)
+        public List<T> Where(Func<T, bool> predicate)
         {
             //var exp = predicate.ToExpression();
             //TSqlFormatter.Format(exp, true).Log();
 
-            IEnumerable<T> result = GetAll();
+            List<T> result = GetAll();
             if (result != null)
             {
-                result = result.Where(predicate);
+                result = result.Where(predicate).ToList();
             }
             else
             {
@@ -3722,15 +3781,15 @@ namespace NostreetsORM
             throw new NotImplementedException();
         }
 
-        public IEnumerable<T> Where(Func<T, bool> predicate)
+        public List<T> Where(Func<T, bool> predicate)
         {
             //Expression<Func<T, bool>> exp = x => predicate(x);
             //TSqlFormatter.Format(exp).Log();
 
-            IEnumerable<T> result = GetAll();
+            List<T> result = GetAll();
             if (result != null)
             {
-                result = result.Where(predicate);
+                result = result.Where(predicate).ToList();
             }
             else
             {
