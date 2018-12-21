@@ -2214,9 +2214,7 @@ namespace NostreetsORM
         private object Insert(object model, Type type, ref Dictionary<KeyValuePair<Type, PropertyInfo>, KeyValuePair<object, object[]>> relations)
         {
             if (model == null)
-            {
                 model = type.Instantiate();
-            }
 
             object id = null;
             Dictionary<Type, object> refferedIds = new Dictionary<Type, object>();
@@ -2300,14 +2298,10 @@ namespace NostreetsORM
         private object Insert(object model, Type type, Dictionary<Type, object> ids = null)
         {
             if (ids != null && ids.Values.Any(a => a.GetType().IsCollection()))
-            {
                 throw new Exception("ids.Values cannot be a collection...");
-            }
 
             if (model.GetType() != type)
-            {
                 throw new Exception("model Parameter is the wrong type...");
-            }
 
             object id = 0;
             bool needsId = NeedsIdProp(type, out int pkOrdinal);
