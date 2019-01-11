@@ -72,7 +72,7 @@ namespace NostreetsORM
                                             _procTemplates = null;
 
         private bool _tableCreation = false,
-                                            _nullLock = false;
+                                      _nullLock = false;
 
         private int _tableLayer = 0;
         private Type _type = null;
