@@ -1259,7 +1259,7 @@ namespace NostreetsORM
                     pkOrdinalType = typeof(int);
                 }
 
-                string columns = string.Join(", ", matchingColumns);
+                string columns = "[" + string.Join("], [", matchingColumns) + "]";
 
                 query = (pkOrdinalType == typeof(int))
                             ? _partialProcs["IdentityInsert"].FormatString(GetTableName(type), "ON")
