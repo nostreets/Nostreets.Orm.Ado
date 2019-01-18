@@ -14,8 +14,8 @@ using Newtonsoft.Json.Linq;
 using NostreetsExtensions.DataControl.Classes;
 using NostreetsExtensions.Extend.Basic;
 using NostreetsExtensions.Extend.Data;
-using NostreetsExtensions.Helpers;
-using NostreetsExtensions.Helpers.QueryProvider;
+using NostreetsExtensions.Helpers.Data;
+using NostreetsExtensions.Helpers.Data.QueryProvider;
 using NostreetsExtensions.Interfaces;
 using NostreetsExtensions.Utilities;
 
