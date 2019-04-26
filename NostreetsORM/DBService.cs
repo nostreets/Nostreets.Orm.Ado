@@ -1872,7 +1872,7 @@ namespace NostreetsORM
         }
         #endregion Internal Reads
 
-        #region Private Acess Methods
+        #region Private Access Methods
 
         private void Delete(Type type, object id)
         {
@@ -2686,7 +2686,7 @@ namespace NostreetsORM
         }
         #endregion Private Acess Methods
 
-        #region Public Acess Methods
+        #region Public Access Methods
 
         public void Backup(string path = null)
         {
@@ -3156,7 +3156,7 @@ namespace NostreetsORM
 
         }
 
-        #endregion Public Acess Methods
+        #endregion Public Access Methods
     }
 
     public class DBService<T> : IDBService<T> where T : class
