@@ -164,14 +164,18 @@ namespace NostreetsORM
 
         private object GetNormalizedSchema(Type type, string prefix = null)
         {
-            List<string> propNames = new List<string>();
-            List<Type> propTypes = new List<Type>();
             List<Tuple<string, Type, Dictionary<Type, object[]>>> props = new List<Tuple<string, Type, Dictionary<Type, object[]>>>();
-            List<Tuple<string, Type, MethodAttributes, Dictionary<Type, ParameterAttributes>, Dictionary<Type, object[]>>> methods =
-                type.GetMethods().Select(a => new Tuple<string, Type, MethodAttributes, Dictionary<Type, ParameterAttributes>, Dictionary<Type, object[]>>(
-                    a.Name, a.ReturnType, a.Attributes,
-                    Basic.ToDictionary(a.GetParameters(), b => new KeyValuePair<Type, ParameterAttributes>(b.ParameterType, b.Attributes)), null
-                )).ToList();
+            List<Tuple<string, Type, MethodAttributes, List<Tuple<Type, ParameterAttributes>>, Dictionary<Type, object[]>>> methods =
+                type.GetMethods().Select(
+                    a =>
+                    new Tuple<string, Type, MethodAttributes, List<Tuple<Type, ParameterAttributes>>, Dictionary<Type, object[]>>(
+                          a.Name
+                        , a.ReturnType
+                        , a.Attributes
+                        , a.GetParameters().Select(
+                             b => new Tuple<Type, ParameterAttributes>(b.ParameterType, b.Attributes)).ToList()
+                        , null
+                    )).ToList();
 
 
             if (type.IsEnum)
@@ -193,21 +197,21 @@ namespace NostreetsORM
                 {
                     if (ShouldNormalize(prop.PropertyType))
                     {
-                        propNames.Add(prop.Name + "Id");
-                        propTypes.Add(typeof(int));
+                        props.Add(new Tuple<string, Type, Dictionary<Type, object[]>>(prop.Name + "Id", typeof(int), null));
                     }
                     else if (!prop.PropertyType.IsCollection())
                     {
-                        propNames.Add(prop.Name);
-                        propTypes.Add(prop.PropertyType);
+                        props.Add(new Tuple<string, Type, Dictionary<Type, object[]>>(prop.Name, prop.PropertyType, null));
                     }
                 }
             }
             else
             {
                 Type collectionType = type.GetTypeOfT();
-                propNames.AddRange(new[] { prefix?.Split('_')[0] + "Id", (collectionType.IsSystemType()) ? "Serialized" + GetTableName(type) : collectionType.Name + "Id" });
-                propTypes.AddRange(new[] { typeof(int), (collectionType.IsSystemType()) ? typeof(string) : typeof(int) });
+                props.AddRange(new Tuple<string, Type, Dictionary<Type, object[]>>[]{
+                    new Tuple<string, Type, Dictionary<Type, object[]>>(prefix?.Split('_')[0] + "Id", typeof(int), null),
+                    new Tuple<string, Type, Dictionary<Type, object[]>>(collectionType.IsSystemType() ? "Serialized" + GetTableName(type) : collectionType.Name + "Id", collectionType.IsSystemType() ? typeof(string) : typeof(int), null)
+                });
             }
 
             return ClassBuilder.CreateObject(type.Name, props, methods);
