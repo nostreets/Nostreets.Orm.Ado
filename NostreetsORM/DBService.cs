@@ -69,10 +69,10 @@ namespace NostreetsORM
         private string _lastQueryExcuted = null;
         private List<EntityMap> _mappedEntities = null;
         private Dictionary<string, string> _partialProcs = null,
-                                            _procTemplates = null;
+                                           _procTemplates = null;
 
         private bool _tableCreation = false,
-                                      _nullLock = false;
+                     _nullLock = false;
 
         private int _tableLayer = 0;
         private Type _type = null;
@@ -222,59 +222,59 @@ namespace NostreetsORM
             return type.GetPropertiesByAttribute<T>() ?? new List<PropertyInfo>();
         }
 
-        private Type[] GetRelationships(Type type)
-        {
-            if (type.IsCollection())
-            {
-                return new[] { type.GetTypeOfT() };
-            }
+        //private Type[] GetRelationships(Type type)
+        //{
+        //    if (type.IsCollection())
+        //    {
+        //        return new[] { type.GetTypeOfT() };
+        //    }
 
-            Type[] result = null;
-            List<Type> list = null;
-            List<PropertyInfo> relations = type.GetProperties().Where(
-                                                a => (ShouldNormalize(a.PropertyType) && !a.PropertyType.IsEnum) || (a.PropertyType != typeof(string) && a.PropertyType.IsCollection())
-                                           ).ToList();
+        //    Type[] result = null;
+        //    List<Type> list = null;
+        //    List<PropertyInfo> relations = type.GetProperties().Where(
+        //                                        a => (ShouldNormalize(a.PropertyType) && !a.PropertyType.IsEnum) || (a.PropertyType != typeof(string) && a.PropertyType.IsCollection())
+        //                                   ).ToList();
 
-            if (relations != null && relations.Count > 0)
-            {
-                foreach (PropertyInfo prop in relations)
-                {
-                    Type propType = prop.PropertyType;
+        //    if (relations != null && relations.Count > 0)
+        //    {
+        //        foreach (PropertyInfo prop in relations)
+        //        {
+        //            Type propType = prop.PropertyType;
 
-                    if (list == null)
-                    {
-                        list = new List<Type>();
-                    }
+        //            if (list == null)
+        //            {
+        //                list = new List<Type>();
+        //            }
 
-                    list.Add(propType);
-                }
+        //            list.Add(propType);
+        //        }
 
-                result = list?.Distinct().ToArray();
-            }
+        //        result = list?.Distinct().ToArray();
+        //    }
 
-            return result;
-        }
+        //    return result;
+        //}
 
-        private Dictionary<Type, Type[]> GetSubTablesAccessed()
-        {
-            List<Type> typesToCheck = GetRelationships(_type).Distinct().ToList();
-            Dictionary<Type, Type[]> result = new Dictionary<Type, Type[]>();
-            Type[] relations = null;
+        //private Dictionary<Type, Type[]> GetSubTablesAccessed()
+        //{
+        //    List<Type> typesToCheck = GetRelationships(_type).Distinct().ToList();
+        //    Dictionary<Type, Type[]> result = new Dictionary<Type, Type[]>();
+        //    Type[] relations = null;
 
-            for (int i = 0; i < typesToCheck.Count; i++)
-            {
-                relations = GetRelationships(typesToCheck[i]);
+        //    for (int i = 0; i < typesToCheck.Count; i++)
+        //    {
+        //        relations = GetRelationships(typesToCheck[i]);
 
-                result.Add(typesToCheck[i], relations);
+        //        result.Add(typesToCheck[i], relations);
 
-                if (relations != null)
-                {
-                    typesToCheck.AddRange(relations);
-                }
-            }
+        //        if (relations != null)
+        //        {
+        //            typesToCheck.AddRange(relations);
+        //        }
+        //    }
 
-            return result;
-        }
+        //    return result;
+        //}
 
         private void LogThenThrow(Exception ex)
         {
@@ -476,7 +476,13 @@ namespace NostreetsORM
 
             if (!doesExist)
             {
-                DeleteAllTablesOfType();
+                try
+                {
+                    DeleteAllTablesOfType();
+                }
+                catch (Exception)
+                { }
+
                 CreateTable(_type);
             }
             else if (!isCurrent)
@@ -1067,14 +1073,11 @@ namespace NostreetsORM
         private string GetProcsForCollection(Type type, string prefix, KeyValuePair<string, string> template)
         {
             if (!type.IsCollection())
-            {
                 throw new Exception("type has to implement IEnumerable...");
-            }
 
             if (prefix == null)
-            {
                 throw new Exception("prefix cannot be null...");
-            }
+
 
             Type collType = type.GetTypeOfT();
             string skimmedPrefix = prefix.Split('_')[0],
@@ -1085,15 +1088,23 @@ namespace NostreetsORM
                    select = "{0}.[{2}Id], {0}.[{1}" + ((collType.IsSystemType()) ? "" : "Id") + "]",
                    update = "[{0}" + ((collType.IsSystemType()) ? "" : "Id") + "] = @{0}" + ((collType.IsSystemType()) ? "" : "Id");
 
+
+            Type parentType = _mappedEntities.First(a => a.Id == skimmedPrefix).Type;
+            NeedsIdProp(parentType, out int ordinal);
+            Type parentIdType = parentType.GetPropertyType(ordinal);
+
+
             inputParams = inputParams.FormatString(
                                 ((collType.IsSystemType())
                                     ? "Serialized" + GetTableName(type)
                                     : collType.Name)
-                                , DeterminSQLType(typeof(int))
+                                //, DeterminSQLType(typeof(int))
+                                , DeterminSQLType(parentIdType)
                                 , skimmedPrefix
                                 , ((collType.IsSystemType())
                                     ? DeterminSQLType(typeof(string))
-                                    : DeterminSQLType(typeof(int)))
+                                    //: DeterminSQLType(typeof(int)))
+                                    : DeterminSQLType(parentIdType))
                            );
 
             update = update.FormatString(
@@ -2193,11 +2204,15 @@ namespace NostreetsORM
                    childTypeName = property.PropertyType.GetTypeOfT().Name.SafeName();
 
             string collectionTbl = parentTypeName + '_' + property.Name + '_' + childTypeName + "Collections";
+            Type parentIdType = parentId.GetType();
             Type listType = parentType.GetProperties().FirstOrDefault(a => a.PropertyType.IsCollection() && a == property).PropertyType;
 
             string query = _partialProcs["Select"].FormatString("Serialized" + childTypeName + "Collections")
                          + _partialProcs["From"].FormatString(collectionTbl)
-                         + _partialProcs["Where"].FormatString(parentTypeName + "Id = " + parentId);
+                         + _partialProcs["Where"].FormatString(
+                            ((parentIdType == typeof(string)) ? "CAST(" + parentTypeName + "Id AS VARCHAR(MAX)) = " : parentTypeName + "Id = ")
+                            + ((parentIdType == typeof(string)) ? "'" + parentId + "'" : parentId)
+                         );
 
             _lastQueryExcuted = query;
 
@@ -2291,7 +2306,7 @@ namespace NostreetsORM
                     }
                     else if (relation.Value.Value[0].GetType() == typeof(string))
                     {
-                        InsertSerializedCollection(relation.Key.Key, relation.Key.Value, (int)id, (string)relation.Value.Value[0]);
+                        InsertSerializedCollection(relation.Key.Key, relation.Key.Value, id.Cast(id.GetType()), (string)relation.Value.Value[0]);
                     }
                 }
             }
@@ -2389,8 +2404,8 @@ namespace NostreetsORM
             else
             {
                 string parentTypeName = parentType.Name.SafeName(),
-                 childTypeName = property.PropertyType.GetTypeOfT().Name.SafeName(),
-                 collectionTbl = parentTypeName + '_' + property.Name + '_' + childTypeName + "Collections";
+                       childTypeName = property.PropertyType.GetTypeOfT().Name.SafeName(),
+                       collectionTbl = parentTypeName + '_' + property.Name + '_' + childTypeName + "Collections";
 
                 _lastQueryExcuted = "dbo." + collectionTbl + "_Insert";
 
@@ -2672,11 +2687,15 @@ namespace NostreetsORM
                   childTypeName = property.PropertyType.GetTypeOfT().Name.SafeName();
 
             string collectionTbl = parentTypeName + '_' + property.Name + '_' + childTypeName + "Collections";
+            Type parentIdType = parentId.GetType();
             Type listType = parentType.GetProperties().FirstOrDefault(a => a.PropertyType.IsCollection() && a == property).PropertyType;
 
             string query = _partialProcs["Update"].FormatString(collectionTbl)
                          + _partialProcs["Set"].FormatString("[Serialized" + childTypeName + "Collections] = '" + serializedCollection + "'")
-                         + _partialProcs["Where"].FormatString(parentTypeName + "Id = " + parentId);
+                         + _partialProcs["Where"].FormatString(
+                            ((parentIdType == typeof(string)) ? "CAST(" + parentTypeName + "Id AS VARCHAR(MAX)) = " : parentTypeName + "Id = ")
+                            + ((parentIdType == typeof(string)) ? "'" + parentId + "'" : parentId)
+                         );
 
             _lastQueryExcuted = query;
 
