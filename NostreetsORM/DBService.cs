@@ -1,4 +1,13 @@
-﻿using System;
+﻿using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using NostreetsExtensions.DataControl.Classes;
+using NostreetsExtensions.Extend.Basic;
+using NostreetsExtensions.Extend.Data;
+using NostreetsExtensions.Helpers.Data;
+using NostreetsExtensions.Helpers.Data.QueryProvider;
+using NostreetsExtensions.Interfaces;
+using NostreetsExtensions.Utilities;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
@@ -8,16 +17,6 @@ using System.Data.SqlClient;
 using System.Dynamic;
 using System.Linq;
 using System.Reflection;
-
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
-using NostreetsExtensions.DataControl.Classes;
-using NostreetsExtensions.Extend.Basic;
-using NostreetsExtensions.Extend.Data;
-using NostreetsExtensions.Helpers.Data;
-using NostreetsExtensions.Helpers.Data.QueryProvider;
-using NostreetsExtensions.Interfaces;
-using NostreetsExtensions.Utilities;
 
 namespace NostreetsORM
 {
@@ -68,6 +67,7 @@ namespace NostreetsORM
         private IDBService<Error> _errorLog = null;
         private string _lastQueryExcuted = null;
         private List<EntityMap> _mappedEntities = null;
+
         private Dictionary<string, string> _partialProcs = null,
                                            _procTemplates = null;
 
@@ -78,7 +78,6 @@ namespace NostreetsORM
         private Type _type = null;
 
         internal Type IdType { get; private set; } = null;
-
 
         #region Internal Logic
 
@@ -92,11 +91,9 @@ namespace NostreetsORM
                     if (!CheckIfBackUpExist(tbl.Type))
                         BackupAndDropType(tbl);
 
-
             CreateBackupTable(map.Type);
             DropTable(map.Type);
             DropProcedures(map.Type);
-
 
             if (tblsTypeRefers != null)
             {
@@ -115,7 +112,6 @@ namespace NostreetsORM
                         DropProcedures(list.Type, map.Type.Name + "_");
                     }
             }
-
         }
 
         private void DeleteAllTablesOfType()
@@ -176,7 +172,6 @@ namespace NostreetsORM
                              b => new Tuple<Type, ParameterAttributes>(b.ParameterType, b.Attributes)).ToList()
                         , null
                     )).ToList();
-
 
             if (type.IsEnum)
             {
@@ -343,7 +338,6 @@ namespace NostreetsORM
             PropertyInfo[] relations = type.GetProperties().Where(a => !a.PropertyType.IsEnum && ShouldNormalize(a.PropertyType)).ToArray(),
                            notMappedProps = GetPropsByAttribute<NotMappedAttribute>(type).ToArray();
 
-
             EntityColumn[] getColumns()
             {
                 bool needsPK = NeedsIdProp(type, out int ordinal);
@@ -355,7 +349,6 @@ namespace NostreetsORM
                 {
                     if (prop.PropertyType.IsCollection() || notMappedProps.Contains(prop))
                         continue;
-
 
                     bool isPk = (pk != prop || needsPK) ? false : true;
                     list.Add(new EntityColumn(
@@ -392,13 +385,12 @@ namespace NostreetsORM
                 return list.ToArray();
             };
 
-
             entities.Add(new EntityMap(
                           type
                         , new EntityTable(GetTableName(type))
                         , getColumns()
                         , getAssociations()
-                        , type.Name));
+                        , type.Name.SafeName()));
 
             if (relations != null)
 
@@ -406,7 +398,6 @@ namespace NostreetsORM
 
                     if (relation.PropertyType.IsCollection())
                         MapCollection(relation.PropertyType, ref entities, type, relation.Name);
-
                     else
                         MapType(relation.PropertyType, ref entities);
         }
@@ -453,7 +444,6 @@ namespace NostreetsORM
             if (!ShouldNormalize(type))
                 throw new Exception("type's needs to be a custom class to be managed by DBService...");
 
-
             #region Declarations
 
             IdType = type.GetProperties()[pkOrdinal].PropertyType;
@@ -466,22 +456,20 @@ namespace NostreetsORM
 
             #endregion Declarations
 
-
             SetUpQueryFragments();
             SetUpMappedTypes();
-
 
             bool doesExist = CheckIfTableExist(_type),
                  isCurrent = _mappedEntities.All(a => CheckIfTypeIsCurrent(a.Type));
 
             if (!doesExist)
             {
-                try
-                {
-                    DeleteAllTablesOfType();
-                }
-                catch (Exception)
-                { }
+                //try
+                //{
+                //    DeleteAllTablesOfType();
+                //}
+                //catch (Exception)
+                //{ }
 
                 CreateTable(_type);
             }
@@ -492,9 +480,7 @@ namespace NostreetsORM
                 foreach (EntityMap tbl in tablesToUpdate)
                     BackupAndDropType(tbl);
 
-
                 CreateTable(_type);
-
 
                 foreach (EntityMap tbl in tablesToUpdate)
                     UpdateTableFromBackup(tbl.Type);
@@ -606,7 +592,6 @@ namespace NostreetsORM
 
             UpdateTable(type);
 
-
             if (collectionRelations != null && collectionRelations.Count() > 0)
                 foreach (EntityMap collection in collectionRelations)
                 {
@@ -615,7 +600,24 @@ namespace NostreetsORM
 
                     UpdateTable(collection.Type, type.Name + "_");
                 }
+        }
 
+        private void GetReferredTables(Type type)
+        {
+            string query = $@"SELECT
+                               OBJECT_NAME(f.parent_object_id) TableName,
+                               COL_NAME(fc.parent_object_id,fc.parent_column_id) ColName,
+                               OBJECT_NAME (f.referenced_object_id) ReferredTableName
+                            FROM
+                               sys.foreign_keys AS f
+                            INNER JOIN
+                               sys.foreign_key_columns AS fc
+                                  ON f.OBJECT_ID = fc.constraint_object_id
+                            INNER JOIN
+                               sys.tables t
+                                  ON t.OBJECT_ID = fc.referenced_object_id
+                            WHERE
+                               OBJECT_NAME (f.parent_object_id) = '{GetTableName(type)}'";
         }
 
         private void WipeDB()
@@ -748,29 +750,31 @@ namespace NostreetsORM
             return statement;
         }
 
-        private string GetCreateIntermaiateTableQuery(Type parentClass, PropertyInfo collection)
+        private string GetCreateIntermaiateTableQuery(Type parentType, PropertyInfo collection)
         {
-            if (!parentClass.GetProperties().Any(a => a == collection))
+            if (!parentType.GetProperties().Any(a => a == collection))
                 throw new Exception("parentClass does not have any properties of the collection Type");
 
             List<string> columns = new List<string>();
             Type collType = collection.PropertyType,
                  listType = collection.PropertyType.GetTypeOfT();
 
-            string parentName = parentClass.Name.SafeName(),
+            string parentName = parentType.Name.SafeName(),
                    childName = listType.Name.SafeName();
+            NeedsIdProp(parentType, out int ordinal);
+            Type parentIdType = parentType.GetPropertyType(ordinal);
 
             if (ShouldNormalize(listType))
             {
                 string PK = CreateTable(listType);
                 string FKs = " CONSTRAINT [FK_"
-                           + GetTableName(collType, parentClass.Name + '_' + collection.Name + '_')
+                           + GetTableName(collType, parentType.Name + '_' + collection.Name + '_')
                            + "_" + GetTableName(listType)
                            + "] FOREIGN KEY ([" + listType.Name + "Id]) REFERENCES [dbo].[" + GetTableName(listType) + "] ([" + PK + "])";
 
-                FKs += ", CONSTRAINT [FK_" + GetTableName(parentClass) + "_"
-                    + GetTableName(collType, parentClass.Name + '_' + collection.Name + '_')
-                    + "] FOREIGN KEY ([" + parentName + "Id]) REFERENCES [dbo].[" + GetTableName(parentClass) + "] ([" + PK + "])";
+                FKs += ", CONSTRAINT [FK_" + GetTableName(parentType) + "_"
+                    + GetTableName(collType, parentType.Name + '_' + collection.Name + '_')
+                    + "] FOREIGN KEY ([" + parentName + "Id]) REFERENCES [dbo].[" + GetTableName(parentType) + "] ([" + PK + "])";
 
                 for (int i = 0; i < 2; i++)
                 {
@@ -790,7 +794,7 @@ namespace NostreetsORM
                     columns.Add(
                         _partialProcs["CreateColumn"].FormatString(
                             i == 0 ? parentName + "Id" : "Serialized" + GetTableName(collType),
-                            i == 0 ? DeterminSQLType(typeof(int)) : DeterminSQLType(typeof(string)),
+                            i == 0 ? DeterminSQLType(parentIdType) : DeterminSQLType(typeof(string)),
                             "NOT NULL" + ((i == 0) ? ", " : "")
                         )
                     );
@@ -902,7 +906,6 @@ namespace NostreetsORM
             if (type.IsEnum)
                 return GetProcsForEnum(type, template);
 
-
             List<int> skippedProps = new List<int>(); ;
             string query = null;
             string inputParams = null,
@@ -916,7 +919,6 @@ namespace NostreetsORM
                          sel = new List<string>(),
                          jns = new List<string>(),
                          innerUpdt = new List<string>();
-
 
             PropertyInfo[] props = type.GetProperties();
             bool needsPK = NeedsIdProp(type, out int pkOrdinal);
@@ -980,7 +982,6 @@ namespace NostreetsORM
                         + props[i].Name + "Id"
                     );
                 }
-
 
                 sel.Add(
                     GetTableName(type) + ".[" +
@@ -1078,7 +1079,6 @@ namespace NostreetsORM
             if (prefix == null)
                 throw new Exception("prefix cannot be null...");
 
-
             Type collType = type.GetTypeOfT();
             string skimmedPrefix = prefix.Split('_')[0],
                    query = null,
@@ -1088,11 +1088,9 @@ namespace NostreetsORM
                    select = "{0}.[{2}Id], {0}.[{1}" + ((collType.IsSystemType()) ? "" : "Id") + "]",
                    update = "[{0}" + ((collType.IsSystemType()) ? "" : "Id") + "] = @{0}" + ((collType.IsSystemType()) ? "" : "Id");
 
-
             Type parentType = _mappedEntities.First(a => a.Id == skimmedPrefix).Type;
             NeedsIdProp(parentType, out int ordinal);
             Type parentIdType = parentType.GetPropertyType(ordinal);
-
 
             inputParams = inputParams.FormatString(
                                 ((collType.IsSystemType())
@@ -1438,7 +1436,6 @@ namespace NostreetsORM
             if (NeedsIdProp(type, out int pkOrdinal) && !type.IsEnum)
                 type = type.AddProperty(typeof(int), "Id");
 
-
             if (!CheckIfTypeIsCurrent(type))
             {
                 if (!CheckIfTableExist(type))
@@ -1558,7 +1555,6 @@ namespace NostreetsORM
                     null, mod => mod.CommandType = CommandType.Text);
 
                 "Dropped Table {0}... \n".FormatString(tblName).LogInDebug();
-
             }
         }
 
@@ -1574,6 +1570,7 @@ namespace NostreetsORM
                 DropBackupTable(type, prefix);
             }
         }
+
         #endregion Internal Writes
 
         #region Internal Reads
@@ -1617,7 +1614,6 @@ namespace NostreetsORM
             Query.ExecuteCmd(() => Connection, query, null,
                 (reader, set) =>
                 {
-
                     if (dbEnums == null)
                         dbEnums = new Dictionary<int, string>();
 
@@ -1626,7 +1622,6 @@ namespace NostreetsORM
 
                     if (!dbEnums.ContainsKey(key))
                         dbEnums.Add(key, value);
-
                 }, null, cmd => cmd.CommandType = CommandType.Text);
 
             if (dbEnums != null && currentEnums.IsEqualTo(dbEnums))
@@ -1670,10 +1665,10 @@ namespace NostreetsORM
             bool result = false;
             string output = null;
 
-            if (!CheckIfTableExist(type, prefix))
+            if (type.IsEnum)
+                return CheckIfEnumIsCurrent(type);
+            else if (!CheckIfTableExist(type, prefix))
                 result = false;
-            else if (type.IsEnum)
-                result = CheckIfEnumIsCurrent(type);
             else if (ShouldNormalize(type))
             {
                 #region Declaration
@@ -1682,7 +1677,7 @@ namespace NostreetsORM
                 Dictionary<string, Type> columnsInTable = Query.GetSchema(() => Connection, GetTableName(type));
                 PropertyInfo[] baseProps = type.GetProperties(),
                                excludedProps = GetPropsByAttribute<NotMappedAttribute>(type).ToArray(),
-                               includedProps = baseProps.Where(a => (excludedProps != null && !excludedProps.Contains(a)) || !a.PropertyType.IsCollection()).ToArray();
+                               includedProps = baseProps.Where(a => (excludedProps != null && !excludedProps.Contains(a)) && !a.PropertyType.IsCollection()).ToArray();
 
                 #endregion Declaration
 
@@ -1885,6 +1880,7 @@ namespace NostreetsORM
 
             return result;
         }
+
         #endregion Internal Reads
 
         #region Private Access Methods
@@ -2330,11 +2326,14 @@ namespace NostreetsORM
             Query.ExecuteCmd(() => Connection, "dbo." + GetTableName(type) + "_Insert",
                        param =>
                        {
+                           IEnumerable<PropertyInfo> propsToExclude = type.GetPropertiesByNotMappedAttribute();
                            PropertyInfo[] props = type.GetProperties();
 
                            foreach (PropertyInfo prop in props)
                            {
-                               if (!needsId && prop == props[pkOrdinal])
+                               if (propsToExclude != null && propsToExclude.Any(a => a == prop))
+                                   continue;
+                               else if (!needsId && prop == props[pkOrdinal])
                                    continue;
                                else if (prop.PropertyType.IsCollection())
                                    continue;
@@ -2707,7 +2706,8 @@ namespace NostreetsORM
                    , cmd => cmd.CommandType = CommandType.Text
                    , null);
         }
-        #endregion Private Acess Methods
+
+        #endregion Private Access Methods
 
         #region Public Access Methods
 
@@ -2743,7 +2743,6 @@ namespace NostreetsORM
                     throw new Exception("id is not the right Type and cannot Delete...");
 
                 Delete(_type, id);
-
             }
             catch (Exception ex)
             {
@@ -2761,14 +2760,11 @@ namespace NostreetsORM
                 if (ids == null)
                     throw new Exception("collection cannot be null to be able to Insert...");
 
-
                 if (ids.Count() == 0)
                     throw new Exception("collection cannot be empty to be able to Insert...");
 
-
                 foreach (object id in ids)
                     Delete(id);
-
             }
             catch (Exception ex)
             {
@@ -2860,7 +2856,6 @@ namespace NostreetsORM
                 object id = null;
                 Dictionary<KeyValuePair<Type, PropertyInfo>, KeyValuePair<object, object[]>> relations = new Dictionary<KeyValuePair<Type, PropertyInfo>, KeyValuePair<object, object[]>>();
 
-
                 id = Insert(model, _type, ref relations);
 
                 return id;
@@ -2883,7 +2878,6 @@ namespace NostreetsORM
 
                 object id = null;
                 Dictionary<KeyValuePair<Type, PropertyInfo>, KeyValuePair<object, object[]>> relations = new Dictionary<KeyValuePair<Type, PropertyInfo>, KeyValuePair<object, object[]>>();
-
 
                 id = Insert(converter(model), _type, ref relations);
 
@@ -2981,8 +2975,6 @@ namespace NostreetsORM
                 if (model.GetPropertyValue("Id").GetType() != IdType)
                     throw new Exception("model's Id propery has to equal the same Type as the Id column in the Database to be able to Update...");
 
-
-
                 Update(model, model.GetPropertyValue("Id"), _type);
             }
             catch (Exception ex)
@@ -3006,7 +2998,6 @@ namespace NostreetsORM
 
                 if (model.GetPropertyValue("Id").GetType() != IdType)
                     throw new Exception("model's Id propery has to equal the same Type as the Id column in the Database to be able to Update...");
-
 
                 Update(converter(model), model.GetPropertyValue("Id"), _type);
             }
@@ -3147,7 +3138,6 @@ namespace NostreetsORM
                             ((List<dynamic>)result[0]).Add(obj);
                     }
 
-
                     result.Add(new List<dynamic>());
 
                     var dataRow = new ExpandoObject() as IDictionary<string, object>;
@@ -3175,8 +3165,6 @@ namespace NostreetsORM
             Query.ExecuteCmd(() => new SqlConnection(connectionString), sql, setParams, getRow, null, mod => mod.CommandType = CommandType.Text);
 
             return result;
-
-
         }
 
         #endregion Public Access Methods
