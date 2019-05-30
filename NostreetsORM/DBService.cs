@@ -464,13 +464,7 @@ namespace NostreetsORM
 
             if (!doesExist)
             {
-                //try
-                //{
-                //    DeleteAllTablesOfType();
-                //}
-                //catch (Exception)
-                //{ }
-
+                
                 CreateTable(_type);
             }
             else if (!isCurrent)
@@ -485,6 +479,9 @@ namespace NostreetsORM
                 foreach (EntityMap tbl in tablesToUpdate)
                     UpdateTableFromBackup(tbl.Type);
             }
+
+            WipeTempTables();
+
         }
 
         private void SetUpQueryFragments()
@@ -668,6 +665,14 @@ namespace NostreetsORM
                 where is_user_defined = 1
 
                 exec sp_executesql @stmt";
+
+            Query.ExecuteNonQuery(() => Connection, query, null, null, (mod) => mod.CommandType = CommandType.Text);
+        }
+
+        private void WipeTempTables() {
+            "Wiping DB Completely... \n".LogInDebug();
+
+            string query = "SET QUOTED_IDENTIFIER OFF EXEC sp_msforeachtable \"IF('?' IN(SELECT '[' + TABLE_SCHEMA + '].[' + TABLE_NAME + ']' FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME LIKE '%temp%')) BEGIN DROP TABLE? END \"";
 
             Query.ExecuteNonQuery(() => Connection, query, null, null, (mod) => mod.CommandType = CommandType.Text);
         }
@@ -1662,7 +1667,7 @@ namespace NostreetsORM
 
         private bool CheckIfTypeIsCurrent(Type type, string prefix = null)
         {
-            bool result = false;
+            bool result = true;
             string output = null;
 
             if (type.IsEnum)
