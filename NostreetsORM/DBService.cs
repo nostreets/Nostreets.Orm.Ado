@@ -1696,7 +1696,7 @@ namespace NostreetsORM
                     if (!includedProps.Any(
                         (a) =>
                         {
-                            bool r = false;
+                            bool r = columnsInTable.Any(b => b.Key == (ShouldNormalize(a.PropertyType) ? a.Name + "Id" : a.Name));
                             if ((ShouldNormalize(a.PropertyType) ? a.Name + "Id" : a.Name) == col.Key)
                                 r = (Nullable.GetUnderlyingType(a.PropertyType) ?? (ShouldNormalize(a.PropertyType) ? typeof(int) : a.PropertyType)) == col.Value;
 
@@ -1713,7 +1713,7 @@ namespace NostreetsORM
                     if (!columnsInTable.Any(
                             (a) =>
                             {
-                                bool r = false;
+                                bool r = includedProps.Any(b => a.Key == (ShouldNormalize(b.PropertyType) ? b.Name + "Id" : b.Name)); ;
                                 if ((ShouldNormalize(prop.PropertyType) ? prop.Name + "Id" : prop.Name) == a.Key)
                                     r = (Nullable.GetUnderlyingType(prop.PropertyType) ?? (ShouldNormalize(prop.PropertyType) ? typeof(int) : prop.PropertyType)) == a.Value;
 
@@ -2346,7 +2346,7 @@ namespace NostreetsORM
                                {
                                    if (prop.GetValue(model) != null)
                                    {
-                                       int enumId = prop.PropertyType.EnumToDictionary().Index(a => a.Key == (int)prop.GetValue(model)) + 1;
+                                       int enumId = prop.PropertyType.EnumToDictionary().Index(a => a.Key == (int)prop.GetValue(model));
                                        param.Add(new SqlParameter(prop.Name, enumId));
                                    }
                                    else
