@@ -464,7 +464,7 @@ namespace NostreetsORM
 
             if (!doesExist)
             {
-                
+
                 CreateTable(_type);
             }
             else if (!isCurrent)
@@ -669,7 +669,8 @@ namespace NostreetsORM
             Query.ExecuteNonQuery(() => Connection, query, null, null, (mod) => mod.CommandType = CommandType.Text);
         }
 
-        private void WipeTempTables() {
+        private void WipeTempTables()
+        {
             "Wiping DB Completely... \n".LogInDebug();
 
             string query = "SET QUOTED_IDENTIFIER OFF EXEC sp_msforeachtable \"IF('?' IN(SELECT '[' + TABLE_SCHEMA + '].[' + TABLE_NAME + ']' FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME LIKE '%temp%')) BEGIN DROP TABLE? END \"";
@@ -3122,12 +3123,7 @@ namespace NostreetsORM
             }
         }
 
-        public List<dynamic> QueryResults(string sql, Dictionary<string, object> parameters)
-        {
-            return QueryResults(Connection.ConnectionString, sql, parameters);
-        }
-
-        public static List<dynamic> QueryResults(string connectionString, string sql, Dictionary<string, object> parameters)
+        public static List<dynamic> QueryResults(string connectionString, string query, Dictionary<string, object> parameters)
         {
             List<dynamic> result = new List<dynamic>();
 
@@ -3167,9 +3163,14 @@ namespace NostreetsORM
                     coll.Add(new SqlParameter(param.Key, param.Value));
             }
 
-            Query.ExecuteCmd(() => new SqlConnection(connectionString), sql, setParams, getRow, null, mod => mod.CommandType = CommandType.Text);
+            Query.ExecuteCmd(() => new SqlConnection(connectionString), query, setParams, getRow, null, mod => mod.CommandType = CommandType.Text);
 
             return result;
+        }
+
+        public List<dynamic> QueryResults(string query, Dictionary<string, object> parameters)
+        {
+            return QueryResults(Connection.ConnectionString, query, parameters);
         }
 
         #endregion Public Access Methods
@@ -3391,6 +3392,23 @@ namespace NostreetsORM
             else
             {
                 result = new List<T>();
+            }
+
+            return result;
+        }
+
+        public List<TResult> QueryResults<TResult>(string query, Dictionary<string, object> parameters)
+        {
+            List<TResult> result = null;
+            var queryResults = _baseSrv.QueryResults(query, parameters);
+            foreach (var r in queryResults)
+            {
+                TResult record = Data.Map<TResult>(r);
+
+                if (result == null)
+                    result = new List<TResult>();
+
+                result.Add(record);
             }
 
             return result;
@@ -3639,6 +3657,11 @@ namespace NostreetsORM
 
             return result;
         }
+
+        public List<TResult> QueryResults<TResult>(string query, Dictionary<string, object> parameters)
+        {
+            return _baseSrv.QueryResults<TResult>(query, parameters); ;
+        }
     }
 
     public class DBService<T, IdType, AddType, UpdateType> : IDBService<T, IdType, AddType, UpdateType> where T : class
@@ -3807,6 +3830,11 @@ namespace NostreetsORM
             }
 
             return result;
+        }
+
+        public List<TResult> QueryResults<TResult>(string query, Dictionary<string, object> parameters)
+        {
+            return _baseSrv.QueryResults<TResult>(query, parameters); ;
         }
     }
 }
