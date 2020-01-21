@@ -1,8 +1,8 @@
 ﻿using System;
-using NostreetsExtensions.DataControl.Classes;
-using NostreetsExtensions.Interfaces;
+using Nostreets.Extensions.DataControl.Classes;
+using Nostreets.Extensions.Interfaces;
 
-namespace NostreetsORM
+namespace Nostreets.Orm.Ado
 {
     public class ORMOptions
     {

@@ -1,12 +1,12 @@
 ﻿using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using NostreetsExtensions.DataControl.Classes;
-using NostreetsExtensions.Extend.Basic;
-using NostreetsExtensions.Extend.Data;
-using NostreetsExtensions.Helpers.Data;
-using NostreetsExtensions.Helpers.Data.QueryProvider;
-using NostreetsExtensions.Interfaces;
-using NostreetsExtensions.Utilities;
+using Nostreets.Extensions.DataControl.Classes;
+using Nostreets.Extensions.Extend.Basic;
+using Nostreets.Extensions.Extend.Data;
+using Nostreets.Extensions.Helpers.Data;
+using Nostreets.Extensions.Helpers.Data.QueryProvider;
+using Nostreets.Extensions.Interfaces;
+using Nostreets.Extensions.Utilities;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -18,7 +18,7 @@ using System.Dynamic;
 using System.Linq;
 using System.Reflection;
 
-namespace NostreetsORM
+namespace Nostreets.Orm.Ado
 {
     public class DBService : SqlService, IDBService
     {
